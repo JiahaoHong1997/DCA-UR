@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" serverName="98" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="78">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/STM_refinement_mask" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="98">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/STM_refinement_mask" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="99">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/STM_refinment_mask" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>

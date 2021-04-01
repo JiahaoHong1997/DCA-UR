@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="aa429a66-71dc-4a26-a15a-f7a2311866cc" name="98">
+        <fileTransfer rootFolder="/home/hongjh/lab" accessType="SFTP" host="10.176.62.98" port="22" sshConfigId="1b2d0461-bfd9-464c-99a6-2b726d54a57d" sshConfig="hongjh@10.176.62.98:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="acb97b45-d747-433c-9676-b3def45a1182" name="99">
+        <fileTransfer rootFolder="/home/fengzw/hjh/lab" accessType="SFTP" host="10.176.62.99" port="22" sshConfigId="8c11855f-f960-4e94-b282-7dd6632c8e25" sshConfig="fengzw@10.176.62.99:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="d5d1b362-7d1b-4a2d-a94d-a63a15da7db8" name="78">
+        <fileTransfer rootFolder="/home/hjh/lab" accessType="SFTP" host="10.176.64.78" port="22" sshConfigId="1c369a3f-6c6d-4654-9789-e4f339c44c64" sshConfig="hjh@10.176.64.78:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
