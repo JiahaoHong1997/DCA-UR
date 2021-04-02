@@ -23,6 +23,13 @@
           </advancedOptions>
         </fileTransfer>
       </webServer>
+      <webServer id="945d7e18-a159-45c4-9fa1-cd5879d5820e" name="25">
+        <fileTransfer rootFolder="/home/hjh/lab/" accessType="SFTP" host="10.176.64.25" port="22" sshConfigId="f646761d-db72-48fd-9bce-3c45998241c5" sshConfig="hjh@10.176.64.25:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
     </option>
   </component>
 </project>

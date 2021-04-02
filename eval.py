@@ -31,8 +31,6 @@ def get_args():
                         help='Path to the checkpoint (default: none)')
     parser.add_argument('--prefix', type=str,
                         help='Prefix to the model name.')
-    parser.add_argument('--merge-thres', type=float, default=2,
-                        help='Merging Rate. If similarity higher than this, then merge, else append.')
     return parser.parse_args()
 
 
@@ -66,7 +64,7 @@ def eval_DAVIS(model, model_name, dataloader):
             overlay_path = os.path.join(overlay_dir, '00000.png')
             myutils.save_overlay(frames[0], pred, overlay_path, palette)
 
-        fb = FeatureBank(obj_n, args.budget, device, thres_close=args.merge_thres)
+        fb = FeatureBank(obj_n, args.budget, device)
         k4_list, v4_list, h, w = model.memorize(frames[0:1], pred_mask)
         fb.init_bank(k4_list, v4_list)
 
@@ -97,7 +95,6 @@ def eval_DAVIS(model, model_name, dataloader):
         fps.add_frame_n(frame_n)
 
         fps.end()
-        fb.print_peak_mem()
         print(myutils.gct(), 'fps:', fps.fps)
 
 
@@ -144,7 +141,7 @@ def eval_YouTube(model, model_name, dataloader):
             overlay_path = os.path.join(overlay_dir, basename_list[0] + '.png')
             myutils.save_overlay(frame_out, pred, overlay_path, palette)
 
-        fb = FeatureBank(obj_n, args.budget, device, thres_close=args.merge_thres)
+        fb = FeatureBank(obj_n, args.budget, device)
 
         k4_list, v4_list, k4_h, k4_w = model.memorize(frames[0:1], pred_mask)  # 参考帧
         fb.init_bank(k4_list, v4_list)
@@ -194,7 +191,6 @@ def eval_YouTube(model, model_name, dataloader):
                     overlay_path = os.path.join(overlay_dir, basename_list[t] + '.png')
                     myutils.save_overlay(frame_out, pred, overlay_path, palette)
 
-        fb.print_peak_mem()
 
 
 def main():

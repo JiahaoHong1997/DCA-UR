@@ -100,7 +100,7 @@ class Matcher(nn.Module):
     def __init__(self):
         super(Matcher, self).__init__()
 
-    def forward(self, feature_bank, q_in, q_out, h, w, mask_bank):
+    def forward(self, feature_bank, q_in, q_out, h, w, mask_bank, info):
         mem_out_list = []
         mask_mem_out_list = []
 
@@ -114,10 +114,12 @@ class Matcher(nn.Module):
             # try:
                 # 每个视频中的所有帧都在此处进行了相似度计算
             p = torch.matmul(feature_bank.keys[i].transpose(0, 1), q_in) / math.sqrt(d_key)
-            p = F.softmax(p, dim=1)  # fbs, t*h*w, h*w
+            p = F.softmax(p, dim=1)  # bs, t*h*w, h*w
             mem = torch.matmul(feature_bank.values[i], p)  # frame_idx, 512, h*w
-            # print('mask_bank.mask_list[i]:', mask_bank.mask_list[i].size())
-            # print('p:', p.size())
+            if mask_bank.mask_list[i].size()[1] != p.size()[1]:
+                print("mask_bank.mask_list[i].size()[1]:", mask_bank.mask_list[i].size()[1])
+                print("p.size()[1]:", p.size()[1])
+                print("mistake apear in:", info)
             mask_mem = torch.matmul(mask_bank.mask_list[i], p)  # 1, 1, h*w
 
                 # print('mem:',mem.size())
@@ -350,7 +352,7 @@ class STM(nn.Module):
         # print('v4_list:',v4_list[0].size())  # (128,H/16 * W/16)
         return k4_list, v4_list, h, w
 
-    def segment(self, frame, fb_global, mb):
+    def segment(self, frame, fb_global, mb, info):
 
         obj_n = fb_global.obj_n
 
@@ -413,7 +415,7 @@ class STM(nn.Module):
         # writer.flush()
         # writer.close()
 
-        res_global, mask_mem = self.matcher(fb_global, k4, v4, global_match_h, global_match_w, mb)
+        res_global, mask_mem = self.matcher(fb_global, k4, v4, global_match_h, global_match_w, mb, info)
         res_global = res_global.reshape(bs * obj_n, v4.shape[1] * 2, global_match_h, global_match_w)
         # print('res_global:',res_global.size())    # frame_idx * obj_n, 1024, h ,w
         # print(mb.mask_list[0].size())

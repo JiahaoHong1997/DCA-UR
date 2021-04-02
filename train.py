@@ -109,14 +109,14 @@ def run_maintrain(model, dataloader, criterion, optimizer):
         uncertainties = torch.zeros(frame_n - 1).to(device)
 
         for t in range(1, frame_n):
-            score, uncertainty = model.segment(frames[t:t + 1], fb_global, mb)  # 1 , obj_n , H , W
+            score, uncertainty = model.segment(frames[t:t + 1], fb_global, mb, info)  # 1 , obj_n , H , W
             scores[t - 1] = score[0]
             uncertainties[t - 1] = uncertainty
 
             if t < frame_n - 1:
                 k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], masks[t:t + 1])
                 fb_global.update(k4_list, v4_list, t)
-                maskforupdate = nn.functional.interpolate(score, size=(25,25), mode='bilinear', align_corners=True)
+                maskforupdate = nn.functional.interpolate(score, size=(25, 25), mode='bilinear', align_corners=True)
                 mb.update(maskforupdate)
 
         # print('score:',scores.size())
@@ -184,13 +184,13 @@ def main():
             checkpoint = torch.load(args.resume)
             model.load_state_dict(checkpoint['model'], strict=False)
             seed = checkpoint['seed']
-            if args.level != 0 and args.new == None:
+            if args.level != 0 and args.new is False:
                 skips = checkpoint['max_skip']
                 if isinstance(skips, list):
                     for idx, skip in enumerate(skips):
                         dataset.datasets[idx].set_max_skip(skip)
                 else:
-                    dataset.set_max_skip(skips[0])
+                    dataset.set_max_skip(skips)
 
             if not args.new:
                 start_epoch = checkpoint['epoch'] + 1
@@ -225,8 +225,6 @@ def main():
     for epoch in progress_bar:
 
         lr = scheduler.get_last_lr()[0]  # 获得上一个epoch的学习率
-        print('')
-        print(myutils.gct(), f'Epoch: {epoch} lr: {lr}')
 
         if args.level != 0:
             loss = run_maintrain(model, dataloader, criterion, optimizer)
@@ -246,6 +244,9 @@ def main():
                 else:
                     dataset.increase_max_skip()
                     skips = dataset.max_skip
+
+        print('')
+        print(myutils.gct(), f'Epoch: {epoch} lr: {lr} max_skip:{skips}')
 
         if args.log:
 

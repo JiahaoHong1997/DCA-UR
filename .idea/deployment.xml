@@ -2,6 +2,13 @@
 <project version="4">
   <component name="PublishConfigData" serverName="98" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
+      <paths name="25">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/STM_refinement_mask" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="78">
         <serverdata>
           <mappings>
