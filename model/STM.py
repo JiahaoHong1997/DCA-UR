@@ -8,8 +8,7 @@ from torchvision.models import resnet50
 import myutils
 # from myutils.data import ToCuda
 from datetime import datetime
-
-from model import SpatialModule
+from model import Position
 
 TIMESTAMP = "{0:%Y-%m-%dT%H-%M-%S/}".format(datetime.now())
 
@@ -97,92 +96,73 @@ class KeyVaule(nn.Module):
 
 
 class Matcher(nn.Module):
-    def __init__(self):
+    def __init__(self, top_k, km):
         super(Matcher, self).__init__()
+        self.top_k = top_k
+        self.km = km
 
     def forward(self, feature_bank, q_in, q_out, h, w, mask_bank, info):
         mem_out_list = []
-        mask_mem_out_list = []
 
-        # print('q_in:',q_in.size())   # frame_idx,128,h*w
         for i in range(0, feature_bank.obj_n):
             d_key, bank_n = feature_bank.keys[i].size()  # 128 , t*h*w
 
             # print('feature_bank.keys[i]:',feature_bank.keys[i].size())
             # print('feature_bank.keys[i].transpose(0, 1):',feature_bank.keys[i].transpose(0, 1).size())  # t*h*w , 128
             bs, _, n = q_in.size()
-            # try:
-                # 每个视频中的所有帧都在此处进行了相似度计算
-            p = torch.matmul(feature_bank.keys[i].transpose(0, 1), q_in) / math.sqrt(d_key)
-            p = F.softmax(p, dim=1)  # bs, t*h*w, h*w
+            p = torch.matmul(feature_bank.keys[i].transpose(0, 1), q_in) / math.sqrt(d_key)  # bs, t*h*w, h*w
+
+            if self.km is not None:
+                # Make a bunch of Gaussian distributions
+                argmax_idx = p.max(2)[1]
+                y_idx, x_idx = argmax_idx // w, argmax_idx % w
+                g = myutils.make_gaussian(y_idx, x_idx, h, w, sigma=self.km)
+                g = g.view(bs, bank_n, n)
+
+                p = myutils.softmax_w_g_top(p, top=self.top_k, gauss=g) # bs, t*h*w, h*w
+            else:
+                if self.top_k is not None:
+                    p = myutils.softmax_w_g_top(p, top=self.top_k, gauss=None)  # bs, t*h*w, h*w
+                else:
+                    p = F.softmax(p, dim=1)   # bs, t*h*w, h*w
+
             mem = torch.matmul(feature_bank.values[i], p)  # frame_idx, 512, h*w
-            if mask_bank.mask_list[i].size()[1] != p.size()[1]:
-                print("mask_bank.mask_list[i].size()[1]:", mask_bank.mask_list[i].size()[1])
-                print("p.size()[1]:", p.size()[1])
-                print("mistake apear in:", info)
+            # print("mask_bank.mask_list[i]:",mask_bank.mask_list[i].size())
+            # print("p:",p.size())
             mask_mem = torch.matmul(mask_bank.mask_list[i], p)  # 1, 1, h*w
+            q_out_with_mask = q_out * mask_mem
 
-                # print('mem:',mem.size())
-                #
-                # from tensorboardX import SummaryWriter
-                # from torchvision.utils import make_grid
-                # writer = SummaryWriter(comment=TIMESTAMP)
-                #
-                # mmem = mem.reshape(mem.size()[0], mem.size()[1], h, w)
-                # curr = q_out.reshape(q_out.size()[0], q_out.size()[1], h, w)
-                # writer.add_image('mem',
-                #                  make_grid(mmem[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
-                #                            pad_value=1, scale_each=True, range=(0, 1)), i)
-                # writer.add_image('curr',
-                #                  make_grid(curr[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
-                #                            pad_value=1, scale_each=True, range=(0, 1)), i)
-                #
-                # writer.flush()
-                # writer.close()
+            # from tensorboardX import SummaryWriter
+            # from torchvision.utils import make_grid
+            # writer = SummaryWriter(comment=TIMESTAMP)
 
-            # except RuntimeError as e:
-            #     device = feature_bank.keys[i].device
-            #     key_cpu = feature_bank.keys[i].cpu()
-            #     value_cpu = feature_bank.values[i].cpu()
-            #     q_in_cpu = q_in.cpu()
-            #
-            #     p = torch.matmul(key_cpu.transpose(0, 1), q_in_cpu) / math.sqrt(d_key)  # THW, HW
-            #     p = F.softmax(p, dim=1)  # bs, bank_n, HW
-            #     mem = torch.matmul(value_cpu, p).to(device)  # bs, D_o, HW
-            #     p = p.to(device)
-            #     print('\tLine 158. GPU out of memory, use CPU', f'p size: {p.shape}')
+            # mmem = mem.reshape(mem.size()[0], mem.size()[1], h, w)
+            # curr = q_out.reshape(q_out.size()[0], q_out.size()[1], h, w)
+            # currWithMask = q_out_with_mask.reshape(q_out.size()[0], q_out.size()[1], h, w)
+            # mmask_mem = mask_mem.reshape(mask_mem.size()[0], mask_mem.size()[1], h, w)
 
-            mem_out_list.append(torch.cat([mem, q_out], dim=1))  # frame_idx, 1024, h*w
-            mask_mem_out_list.append(mask_mem)
+            # writer.add_image('mem',
+            #           make_grid(mmem[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+            #                     pad_value=1, scale_each=True, range=(0, 1)), i)
+            # writer.add_image('curr',
+            #           make_grid(curr[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+            #                     pad_value=1, scale_each=True, range=(0, 1)), i)
+            # writer.add_image('currWithMask',
+            #           make_grid(currWithMask[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+            #                     pad_value=1, scale_each=True, range=(0, 1)), i)
+            # writer.add_image('mmask_mem',
+            #           make_grid(mmask_mem[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+            #                     pad_value=1, scale_each=True, range=(0, 1)), i)
+
+            # writer.flush()
+            # writer.close()
+
+            mem_out_list.append(torch.cat([mem, q_out_with_mask], dim=1))  # frame_idx, 1024, h*w
 
         mem_out_tensor = torch.stack(mem_out_list, dim=0).transpose(0, 1)  # frame_idx, obj_n, 1024, h*w
         # print('mem_out_tensor:',mem_out_tensor.size())
 
-        mask_mem_out_tensor = torch.stack(mask_mem_out_list, dim=0).transpose(0, 1)  # 1, obj_n, h*w
-        # print("mask_mem_out_tensor:",mask_mem_out_tensor.size())
-
-        return mem_out_tensor, mask_mem_out_tensor
-
-
-# class MaskMatcher(nn.Module):
-#     def __init__(self):
-#         super(MaskMatcher, self).__init__()
-#
-#     def forward(self, mask_bank, q_in, feature_bank):
-#         mem_out_list = []
-#         for i in range(0, feature_bank.obj_n):
-#             d_key, bank_n = feature_bank.keys[i].size()  # 128 , t*h*w
-#             p = torch.matmul(feature_bank.keys[i].transpose(0, 1), q_in) / math.sqrt(d_key)
-#             p = F.softmax(p, dim=1)  # fbs, t*h*w, h*w
-#             print("mask_bank.mask_list[i]:", mask_bank.mask_list[i].size())
-#             print("p:", p.size())
-#             mask_mem = torch.matmul(mask_bank.mask_list[i], p)  # 1, 1, h*w
-#
-#             mem_out_list.append(mask_mem)
-#
-#         mem_out_tensor = torch.stack(mem_out_list, dim=0).transpose(0, 1) # 1, obj_n, h*w
-#
-#         return mem_out_tensor
+        return mem_out_tensor
 
 
 class ResBlock(nn.Module):
@@ -291,7 +271,7 @@ class Decoder(nn.Module):
 
 
 class STM(nn.Module):
-    def __init__(self, device, load_imagenet_params=False):
+    def __init__(self, device, load_imagenet_params=False, top_k=50, km=None):
         super(STM, self).__init__()
 
         self.device = device
@@ -299,13 +279,13 @@ class STM(nn.Module):
         self.encoder_m = EncoderM(load_imagenet_params)
 
         self.keyvalue_r4 = KeyVaule(indim=1024, keydim=128, vauledim=512)
+        self.position = Position.PositionalEncoding(d_hid=1024)
 
-        self.matcher = Matcher()
-        # self.mask_matcher = MaskMatcher()
-        self.spatial = SpatialModule.Spatial()
+        self.matcher = Matcher(top_k=top_k, km=km)
+
         self.decoder = Decoder(device)
 
-    def memorize(self, frame, mask):
+    def memorize(self, frame, mask, frame_idx):
 
         _, K, H, W = mask.shape
 
@@ -315,36 +295,12 @@ class STM(nn.Module):
         mask = mask[0].unsqueeze(1).float()  # obj_n, 1, h, w
         mask_ones = torch.ones_like(mask)
         mask_inv = (mask_ones - mask).clamp(0, 1)
-        # print('frame:',frame.size())
-        # print('mask:',mask.size())
-        # print('mask_inv:',mask_inv.size())
+
         r4, r1 = self.encoder_m(frame, mask, mask_inv)
+        h, w = r4.size(2), r4.size(3)
+        r4 = self.position(r4.reshape(K, 1024, -1), frame_idx).reshape(K, 1024, h, w)
 
         k4, v4, h, w = self.keyvalue_r4(r4)  # num_objects, 128 and 512, H/16 * W/16
-        # kk4 = k4.reshape(k4.size(0), k4.size(1), r4.size(2), r4.size(3))
-        # vv4 = v4.reshape(v4.size(0), v4.size(1), r4.size(2), r4.size(3))
-        # print('kk4:', kk4.size())
-        # print('vv4:', vv4.size())
-        # from tensorboardX import SummaryWriter
-        # from torchvision.utils import make_grid
-        # writer = SummaryWriter(comment=TIMESTAMP)
-        #
-        # writer.add_image('key_bg', make_grid(kk4[0].detach().cpu().unsqueeze(dim=1), nrow=10, padding=20, normalize=True, pad_value=1), 0)
-        # writer.add_image('key_fg_1', make_grid(kk4[1].detach().cpu().unsqueeze(dim=1), nrow=10, padding=20, normalize=True, pad_value=1), 0)
-        # writer.add_image('key_fg_2',make_grid(kk4[2].detach().cpu().unsqueeze(dim=1), nrow=10, padding=20, normalize=True, pad_value=1), 0)
-        #
-        # writer.add_image('value_bg',
-        #                  make_grid(vv4[0].detach().cpu().unsqueeze(dim=1), nrow=10, padding=20, normalize=True,
-        #                            pad_value=1), 0)
-        # writer.add_image('value_fg_1',
-        #                  make_grid(vv4[1].detach().cpu().unsqueeze(dim=1), nrow=10, padding=20, normalize=True,
-        #                            pad_value=1), 0)
-        # writer.add_image('value_fg_2',
-        #                  make_grid(vv4[2].detach().cpu().unsqueeze(dim=1), nrow=10, padding=20, normalize=True,
-        #                            pad_value=1), 0)
-        #
-        # writer.flush()
-        # writer.close()
 
         k4_list = [k4[i] for i in range(K)]
         v4_list = [v4[i] for i in range(K)]
@@ -377,12 +333,9 @@ class STM(nn.Module):
         # writer.close()
 
         bs, _, global_match_h, global_match_w = r4.shape
-        # print('r4:',r4.size())   # frame_idx, 1024, h , w
         _, _, local_match_h, local_match_w = r1.shape
 
         k4, v4, h, w = self.keyvalue_r4(r4)  # 1, dim, H/16, W/16
-        # print('k4:',k4.size())  # frame_idx , 128 , h*w
-        # print('v4:',v4.size())  # frame_idx , 512 , h*w
 
         # kk4 = k4.reshape(k4.size(0), k4.size(1), r4.size(2), r4.size(3))
         # vv4 = v4.reshape(v4.size(0), v4.size(1), r4.size(2), r4.size(3))
@@ -415,26 +368,19 @@ class STM(nn.Module):
         # writer.flush()
         # writer.close()
 
-        res_global, mask_mem = self.matcher(fb_global, k4, v4, global_match_h, global_match_w, mb, info)
+
+        res_global = self.matcher(fb_global, k4, v4, global_match_h, global_match_w, mb, info)
         res_global = res_global.reshape(bs * obj_n, v4.shape[1] * 2, global_match_h, global_match_w)
         # print('res_global:',res_global.size())    # frame_idx * obj_n, 1024, h ,w
-        # print(mb.mask_list[0].size())
-        # mask_mem = self.mask_matcher(mb, k4, fb_global)
-        mask_mem = mask_mem.reshape(bs * obj_n, 1, global_match_h, global_match_w)
 
         r3_size = r3.shape
-        # print('r3:',r3.size())   # frame_idx, 512 , H/8 , W/8
         r2_size = r2.shape
-        # print('r2:',r2.size())  # frame_idx, 256, H/4 ,W/4
         r3 = r3.unsqueeze(1).expand(-1, obj_n, -1, -1, -1).reshape(bs * obj_n, *r3_size[1:])
-        # print('r3:', r3.size())  # frame_idx * obj_n , 512 , H/8 , W/8
         r2 = r2.unsqueeze(1).expand(-1, obj_n, -1, -1, -1).reshape(bs * obj_n, *r2_size[1:])
-        # print('r2:', r2.size())   # frame_idx * obj_n , 256 , H/4 , W/4
         r1_size = r1.shape
         r1 = r1.unsqueeze(1).expand(-1, obj_n, -1, -1, -1).reshape(bs * obj_n, *r1_size[1:])
         feature_size = (bs, obj_n, r1_size[2], r1_size[3])
 
-        res_global = self.spatial(res_global, mask_mem)
         score = self.decoder(res_global, r3, r2, r1, feature_size)
 
         score = score.view(bs, obj_n, *frame.shape[-2:])  # frame_idx , obj_n , H , W

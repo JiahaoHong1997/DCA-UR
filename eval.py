@@ -17,20 +17,24 @@ torch.set_grad_enabled(False)
 
 def get_args():
     parser = argparse.ArgumentParser(description='Eval STM_refinement')
-    parser.add_argument('--gpu', type=int, default=0,
+    parser.add_argument('--gpu', type=str,
                         help='GPU card id.')
     parser.add_argument('--level', type=int, default=1, required=True,
                         help='1: DAVIS17. 2: Youtube-VOS. ')
     parser.add_argument('--viz', action='store_true',
                         help='Visualize data.')
-    parser.add_argument('--budget', type=int, default='1000000',
-                        help='Max number of features that feature bank can store. Default: 300000')
     parser.add_argument('--dataset', type=str, default=None, required=True,
                         help='Dataset folder.')
     parser.add_argument('--resume', type=str, required=True,
                         help='Path to the checkpoint (default: none)')
     parser.add_argument('--prefix', type=str,
                         help='Prefix to the model name.')
+    parser.add_argument('--use_km', action='store_true', 
+                        help='If use km.')
+    parser.add_argument('--use_top', action='store_true', 
+                        help='If set top_k.')
+    parser.add_argument('--use_pre', action='store_true', 
+                        help='If use previous frame.')
     return parser.parse_args()
 
 
@@ -53,6 +57,7 @@ def eval_DAVIS(model, model_name, dataloader):
                 os.makedirs(overlay_dir)
 
         frames, masks = frames[0].to(device), masks[0].to(device)
+        H, W = frames.size(2), frames.size(3)
         frame_n = info['num_frames'][0].item()
 
         pred_mask = masks[0:1]
@@ -64,29 +69,57 @@ def eval_DAVIS(model, model_name, dataloader):
             overlay_path = os.path.join(overlay_dir, '00000.png')
             myutils.save_overlay(frames[0], pred, overlay_path, palette)
 
-        fb = FeatureBank(obj_n, args.budget, device)
-        k4_list, v4_list, h, w = model.memorize(frames[0:1], pred_mask)
-        fb.init_bank(k4_list, v4_list)
+        keys_list = []
+        values_list = []
+        mask_list = []
 
-        mb = MaskBank(obj_n, device)
+        fb = FeatureBank(obj_n)
+        k4_list, v4_list, h, w = model.memorize(frames[0:1], pred_mask, 0)
+        keys_list = k4_list.copy()
+        values_list = v4_list.copy()
+        predforupdate = torch.zeros(1, obj_n, H, W).to(device)
+
+        mb = MaskBank(obj_n)
         maskforbank = nn.functional.interpolate(pred_mask, size=(h, w), mode='bilinear', align_corners=True)
-        mb.init_bank(maskforbank)  # pred_mask:(1,obj_n,H,W)
+        maskforbank = maskforbank.view(obj_n, 1, -1)
+        mask_list = [maskforbank[i] for i in range(obj_n)]
+
+        prev_in_mem = True
 
         for t in tqdm(range(1, frame_n), desc=f'{seq_idx} {seq_name}'):
 
-            score, _ = model.segment(frames[t:t + 1], fb, mb)
+            fb.init_bank(keys_list, values_list)
+            mb.init_bank(mask_list)
+
+            if not prev_in_mem and args.use_pre:
+                fb.update(k4_list, v4_list)
+                mb.update(prev_list)
+
+            score, _ = model.segment(frames[t:t + 1], fb, mb, info)
 
             pred_mask = F.softmax(score, dim=1)
+            pred1 = torch.argmax(pred_mask[0], dim=0)
+            for j in range(obj_n):
+                predforupdate[:, j] = (pred1 == j).long()
 
             pred = torch.argmax(pred_mask[0], dim=0).cpu().numpy().astype(np.uint8)
             seg_path = os.path.join(seg_dir, f'{t:05d}.png')
             myutils.save_seg_mask(pred, seg_path, palette)
 
-            if t < frame_n - 1 and t % 2 == 0:
-                k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask)
-                fb.update(k4_list, v4_list, t)
-                maskforupdate = nn.functional.interpolate(score, size=(h, w), mode='bilinear', align_corners=True)
-                mb.update(maskforupdate)
+            k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t)
+            maskforbank = nn.functional.interpolate(predforupdate, size=(h, w), mode='bilinear', align_corners=True)
+            maskforbank = maskforbank.view(obj_n, 1, -1)
+            prev_list = [maskforbank[i] for i in range(obj_n)]
+
+            if t < frame_n - 1 and t % 5 == 0:
+                for class_idx in range(obj_n):
+                    keys_list[class_idx] = torch.cat([keys_list[class_idx], k4_list[class_idx]], dim=1)
+                    values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
+                    mask_list[class_idx] = torch.cat([mask_list[class_idx], prev_list[class_idx]], dim=1)
+
+                prev_in_mem = True
+            else:
+                prev_in_mem = False
 
             if args.viz:
                 overlay_path = os.path.join(overlay_dir, f'{t:05d}.png')
@@ -106,6 +139,7 @@ def eval_YouTube(model, model_name, dataloader):
         frames, masks, obj_n, info = V
 
         frames, masks = frames[0].to(device), masks[0].to(device)
+        H, W = frames.size(2), frames.size(3)
         frame_n = info['num_frames'][0].item()
         seq_name = info['name'][0]
         obj_n = obj_n.item()
@@ -141,19 +175,21 @@ def eval_YouTube(model, model_name, dataloader):
             overlay_path = os.path.join(overlay_dir, basename_list[0] + '.png')
             myutils.save_overlay(frame_out, pred, overlay_path, palette)
 
-        fb = FeatureBank(obj_n, args.budget, device)
+        fb = FeatureBank(obj_n)
 
-        k4_list, v4_list, k4_h, k4_w = model.memorize(frames[0:1], pred_mask)  # 参考帧
+        k4_list, v4_list, k4_h, k4_w = model.memorize(frames[0:1], pred_mask, 0)  # 参考帧
         fb.init_bank(k4_list, v4_list)
 
-        mb = MaskBank(obj_n, device)
+        mb = MaskBank(obj_n)
         maskforbank = nn.functional.interpolate(pred_mask, size=(k4_h, k4_w), mode='bilinear', align_corners=True)
-        mb.init_bank(maskforbank)
-
+        maskforbank = maskforbank.view(obj_n, 1, -1)
+        mask_list = [maskforbank[i] for i in range(obj_n)]
+        mb.init_bank(mask_list)
+        predforupdate = torch.zeros(1, obj_n, H, W).to(device)
 
         for t in trange(1, frame_n, desc=f'{seq_idx:3d}/{seq_n:3d} {seq_name}'):
 
-            score, _ = model.segment(frames[t:t + 1], fb, mb)
+            score, _ = model.segment(frames[t:t + 1], fb, mb, info)
 
             reset_list = list()
             for i in range(1, obj_n):
@@ -171,14 +207,22 @@ def eval_YouTube(model, model_name, dataloader):
                             score[0, j][masks[i]] = -1000
 
             pred_mask = F.softmax(score, dim=1)
+            pred1 = torch.argmax(pred_mask[0], dim=0)
+            for j in range(obj_n):
+                predforupdate[:, j] = (pred1 == j).long()
+
             if t < frame_n - 1:
-                k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask)
+                k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t)
+                maskforbank = nn.functional.interpolate(predforupdate, size=(k4_h, k4_w), mode='bilinear',
+                                                        align_corners=True)
+                maskforbank = maskforbank.view(obj_n, 1, -1)
+                prev_list = [maskforbank[i] for i in range(obj_n)]
                 if len(reset_list) > 0:
-                    fb.init_bank(k4_list, v4_list, t)
+                    fb.init_bank(k4_list, v4_list)
+                    mb.init_bank(prev_list)
                 else:
-                    fb.update(k4_list, v4_list, t)
-                maskforupdate = nn.functional.interpolate(score, size=(k4_h, k4_w), mode='bilinear', align_corners=True)
-                mb.update(maskforupdate)
+                    fb.update(k4_list, v4_list)
+                    mb.update(prev_list)
 
             if basename_list[t] in basename_to_save:
                 pred_mask_output = F.interpolate(score, original_size)
@@ -192,9 +236,12 @@ def eval_YouTube(model, model_name, dataloader):
                     myutils.save_overlay(frame_out, pred, overlay_path, palette)
 
 
-
 def main():
-    model = STM(device)
+    top_k = 50 if args.use_top else None
+    if args.use_km:
+        model = STM(device=device, load_imagenet_params=False, top_k=top_k, km=5.6)
+    else:
+        model = STM(device=device, load_imagenet_params=False, top_k=top_k, km=None)
     model = model.to(device)
     model.eval()
 
@@ -239,12 +286,10 @@ def main():
 if __name__ == '__main__':
     args = get_args()
     print(myutils.gct(), 'Args =', args)
-
-    if args.gpu >= 0 and torch.cuda.is_available():
-        device = torch.device('cuda', args.gpu)
-    else:
-        raise ValueError('CUDA is required. --gpu must be >= 0.')
-
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    
+    device = torch.device('cuda', 0)
+    
     palette = Image.open(os.path.join(args.dataset, 'mask_palette.png')).getpalette()
 
     main()

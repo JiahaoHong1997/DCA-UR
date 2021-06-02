@@ -15,7 +15,8 @@ import torchvision.transforms as TF
 import myutils
 from transforms import transforms as mytrans
 
-MAX_TRAINING_SKIP = 70
+MAX_TRAINING_SKIP = 5
+
 
 class YTB_train(data.Dataset):
 
@@ -61,32 +62,24 @@ class YTB_train(data.Dataset):
         img_list = sorted(glob(os.path.join(img_dir, '*.jpg')))  # 获得每个视频文件夹下各帧排序后的列表
         mask_list = sorted(glob(os.path.join(mask_dir, '*.png')))  # 获得每个视频mask文件夹下各帧排序后的列表
 
-        # TODO:调整选取训练帧的策略，参考cfbi或STM原文中的训练策略
-        # idx_list = list(range(len(img_list)))  # 视频帧的索引
-        # idx0 = idx_list[0]
-        # del idx_list[0]
-        # random.shuffle(idx_list)  # 将idx_list中元素随机排序
-        # idx_list = idx_list[:self.clip_n]  # 取出前clip_n个帧
-        # idx_list[0] = idx0
-
         last_frame = -1
         nframes = len(img_list)
         idx_list = list()
 
         if nframes < self.clip_n:
-            print("少于6帧的视频编号：", video_name)
             for i in range(0, nframes):
                 idx_list.append(i)
-            for i in range(0, self.clip_n-nframes):
-                idx_list.append(nframes-1)
+            for i in range(0, self.clip_n - nframes):
+                idx_list.append(nframes - 1)
         else:
             for i in range(self.clip_n):
                 if i == 0:
                     last_frame = random.sample(range(0, nframes - self.clip_n + 1), 1)[0]
                 else:
-                    last_frame = \
-                    random.sample(range(last_frame + 1, min(last_frame + self.max_skip + 1, nframes - self.clip_n + i + 1)),
-                                1)[0]
+                    last_frame = random.sample(range(last_frame + 1,
+                                                     min(last_frame + self.max_skip + 1,
+                                                         nframes - self.clip_n + i + 1)),
+                                               1)[0]
                 idx_list.append(last_frame)
 
         frames = torch.zeros((self.clip_n, 3, self.output_size, self.output_size), dtype=torch.float)
@@ -105,17 +98,12 @@ class YTB_train(data.Dataset):
             while roi_cnt < 10:
                 img_roi, mask_roi = self.random_resize_crop(img, mask)
                 mask_roi = np.array(mask_roi, np.uint8)  # np.uint8:无符号数（0到255）
-                # print('mask_roi:',mask_roi[200:220,200:220])
-                # print('mask_roi:',mask_roi.shape)
 
-                # TODO:to_onehot方法可能导致每个sample的obj_n不等，可以修改这个方法，使每个sample的obj_n相等，用于多卡训练
                 if i == 0:  # 将第一帧设置为reference
                     mask_roi, obj_list = self.to_onehot(mask_roi)  # 第一帧中所有的标注物体都会出现，所以需要一个obj_list来记录
                     obj_n = len(obj_list) + 1
                 else:
                     mask_roi, _ = self.to_onehot(mask_roi, obj_list)  # 后面的帧中可能不会出现某一物体
-                # print('mask_roi.onehot:',mask_roi[200:220,200:220])
-                # print('mask_roi:', mask_roi.shape)
 
                 if torch.any(mask_roi[0] == 0).item():
                     break

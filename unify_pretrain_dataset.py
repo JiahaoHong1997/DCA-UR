@@ -1,4 +1,5 @@
 import os
+from os import path
 import argparse
 import numpy as np
 import cv2
@@ -50,11 +51,13 @@ def cvt_mask_palette(data):
     obj_cnt = 0
     for idx, label_id in enumerate(obj_labels):
         tmp = int(label_id[0]) + int(label_id[1]) + int(label_id[2])
-        if 0 < tmp / 3 < 128:
+        if 0 < tmp / 3 < 230:
             continue
 
         new_label[(label == label_id).all(axis=1)] = obj_cnt
-        obj_cnt += 1
+        if obj_cnt != 1:
+            obj_cnt += 1
+
 
     new_label = Image.fromarray(new_label.reshape(mask_size))
     new_label.putpalette(mask_palette)
@@ -64,8 +67,8 @@ def cvt_mask_palette(data):
 
 
 def cvt_MSRA10K():
-    img_list = sorted(glob(os.path.join(args.src, 'MARA10K_Imgs_GT/Imgs/', '*.jpg')), key=lambda x: (len(x), x))
-    mask_list = sorted(glob(os.path.join(args.src, 'MARA10K_Imgs_GT/Imgs/', '*.png')), key=lambda x: (len(x), x))
+    img_list = sorted(glob(os.path.join(args.src, 'MSRA10K_Imgs_GT/Imgs/', '*.jpg')), key=lambda x: (len(x), x))
+    mask_list = sorted(glob(os.path.join(args.src, 'MSRA10K_Imgs_GT/Imgs/', '*.png')), key=lambda x: (len(x), x))
 
     dst_img_dir = os.path.join(args.dst, 'JPEGImages', args.name)
     dst_mask_dir = os.path.join(args.dst, 'Annotations', args.name)
@@ -82,8 +85,8 @@ def cvt_MSRA10K():
 
 
 def cvt_ECSSD():
-    img_list = sorted(glob(os.path.join(args.src, 'images', '*.jpg')), key=lambda x: (len(x), x))
-    mask_list = sorted(glob(os.path.join(args.src, 'ground_truth_mask', '*.png')), key=lambda x: (len(x), x))
+    img_list = sorted(glob(os.path.join(args.src, 'ecssd', '*.jpg')), key=lambda x: (len(x), x))
+    mask_list = sorted(glob(os.path.join(args.src, 'ecssd', '*.png')), key=lambda x: (len(x), x))
 
     dst_img_dir = os.path.join(args.dst, 'JPEGImages', args.name)
     dst_mask_dir = os.path.join(args.dst, 'Annotations', args.name)
@@ -112,6 +115,107 @@ def cvt_PASCALS():
 
     mask_list = [(x, dst_mask_dir) for x in mask_list]
     pools = multiprocessing.Pool(worker_n)
+    pools.map(cvt_mask_palette, mask_list)
+    pools.close()
+    pools.join()
+
+def cvt_BIG():
+    img_list = sorted(glob(os.path.join(args.src, 'BIG_small', '*.jpg')), key=lambda x: (len(x), x))
+    mask_list = sorted(glob(os.path.join(args.src, 'BIG_small', '*.png')), key=lambda x: (len(x), x))
+
+    dst_img_dir = os.path.join(args.dst, 'JPEGImages', args.name)
+    dst_mask_dir = os.path.join(args.dst, 'Annotations', args.name)
+    cp_files(img_list, dst_img_dir)
+
+    if not os.path.exists(dst_mask_dir):
+        os.makedirs(dst_mask_dir)
+
+    mask_list = [(x, dst_mask_dir) for x in mask_list]
+    pools = multiprocessing.Pool(16)
+    pools.map(cvt_mask_palette, mask_list)
+    pools.close()
+    pools.join()
+
+def cvt_HRSOD():
+    img_list = sorted(glob(os.path.join(args.src, 'HRSOD_small', '*.jpg')), key=lambda x: (len(x), x))
+    mask_list = sorted(glob(os.path.join(args.src, 'HRSOD_small', '*.png')), key=lambda x: (len(x), x))
+
+
+    dst_img_dir = os.path.join(args.dst, 'JPEGImages', args.name)
+    dst_mask_dir = os.path.join(args.dst, 'Annotations', args.name)
+    cp_files(img_list, dst_img_dir)
+
+    if not os.path.exists(dst_mask_dir):
+        os.makedirs(dst_mask_dir)
+
+    mask_list = [(x, dst_mask_dir) for x in mask_list]
+    pools = multiprocessing.Pool(16)
+    pools.map(cvt_mask_palette, mask_list)
+
+    pools.close()
+    pools.join()
+
+def cvt_dut_te():
+    img_list = sorted(glob(os.path.join(args.src, 'DUTS-TE', '*.jpg')), key=lambda x: (len(x), x))
+    mask_list = sorted(glob(os.path.join(args.src, 'DUTS-TE', '*.png')), key=lambda x: (len(x), x))
+
+    dst_img_dir = os.path.join(args.dst, 'JPEGImages', args.name)
+    dst_mask_dir = os.path.join(args.dst, 'Annotations', args.name)
+    cp_files(img_list, dst_img_dir)
+
+    if not os.path.exists(dst_mask_dir):
+        os.makedirs(dst_mask_dir)
+
+    mask_list = [(x, dst_mask_dir) for x in mask_list]
+    pools = multiprocessing.Pool(16)
+    pools.map(cvt_mask_palette, mask_list)
+    pools.close()
+    pools.join()
+
+def cvt_dut_tr():
+    img_list = sorted(glob(os.path.join(args.src, 'DUTS-TR', '*.jpg')), key=lambda x: (len(x), x))
+    mask_list = sorted(glob(os.path.join(args.src, 'DUTS-TR', '*.png')), key=lambda x: (len(x), x))
+
+    dst_img_dir = os.path.join(args.dst, 'JPEGImages', args.name)
+    dst_mask_dir = os.path.join(args.dst, 'Annotations', args.name)
+    cp_files(img_list, dst_img_dir)
+
+    if not os.path.exists(dst_mask_dir):
+        os.makedirs(dst_mask_dir)
+
+    mask_list = [(x, dst_mask_dir) for x in mask_list]
+    pools = multiprocessing.Pool(16)
+    pools.map(cvt_mask_palette, mask_list)
+    pools.close()
+    pools.join()
+
+def cvt_fss():
+
+    img_list = []
+    mask_list = []
+    classes = os.listdir(args.src)
+    for c in classes:
+        imgs = os.listdir(path.join(args.src, c))
+        jpg_list = [im for im in imgs if 'jpg' in im[-3:].lower()]
+        joint_list = [path.join(args.src, c, im) for im in jpg_list]
+        img_list.extend(joint_list)
+        img_list = sorted(img_list, key=lambda x: (len(x), x))
+
+        png_list = [im for im in imgs if 'png' in im[-3:].lower()]
+        joint_list2 = [path.join(args.src, c, im) for im in png_list]
+        mask_list.extend(joint_list2)
+        mask_list = sorted(mask_list, key=lambda x: (len(x), x))
+
+
+    dst_img_dir = os.path.join(args.dst, 'JPEGImages', args.name)
+    dst_mask_dir = os.path.join(args.dst, 'Annotations', args.name)
+    cp_files(img_list, dst_img_dir)
+
+    if not os.path.exists(dst_mask_dir):
+        os.makedirs(dst_mask_dir)
+
+    mask_list = [(x, dst_mask_dir) for x in mask_list]
+    pools = multiprocessing.Pool(16)
     pools.map(cvt_mask_palette, mask_list)
     pools.close()
     pools.join()
@@ -243,6 +347,7 @@ if __name__ == '__main__':
     # Download: https://mmcheng.net/msra10k/
     if args.name == 'MSRA10K':
         cvt_MSRA10K()
+        print(1)
 
     # Jianping Shi, Qiong Yan, Li Xu, and Jiaya Jia.  Hierar-chical image saliency detection on extended cssd
     # Download http://www.cse.cuhk.edu.hk/leojia/projects/hsaliency/dataset.html
@@ -268,3 +373,19 @@ if __name__ == '__main__':
     # --name PASCALVOC2012 --src /Ship01/Dataset/PASCALVOC2012
     if args.name == 'PASCALVOC2012':
         cvt_VOC2012()
+    
+    if args.name == 'BIG':
+
+        cvt_BIG() 
+
+    if args.name == 'HRSOD':
+        cvt_HRSOD()
+
+    if args.name == 'DUTS-TE':
+        cvt_dut_te()
+
+    if args.name == 'DUTS-TR':
+        cvt_dut_tr()
+
+    if args.name == 'fss':
+        cvt_fss()

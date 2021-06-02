@@ -188,3 +188,42 @@ def tensor_to_PIL(tensor1, tensor2):
     mask = unloader_mask(mask)
 
     return image, mask
+
+def make_gaussian(y_idx, x_idx, height, width, sigma=7):
+    yv, xv = torch.meshgrid([torch.arange(0, height), torch.arange(0, width)])
+
+    yv = yv.reshape(height*width).unsqueeze(0).float().cuda()
+    xv = xv.reshape(height*width).unsqueeze(0).float().cuda()
+
+    y_idx = y_idx.transpose(0, 1)
+    x_idx = x_idx.transpose(0, 1)
+
+    g = torch.exp(- ((yv-y_idx)**2 + (xv-x_idx)**2) / (2*sigma**2) )
+
+    return g
+
+def softmax_w_g_top(x, top=None, gauss=None):
+    if top is not None:
+        if gauss is not None:
+            maxes = torch.max(x, dim=1, keepdim=True)[0]
+            x_exp = torch.exp(x - maxes)*gauss
+            x_exp, indices = torch.topk(x_exp, k=top, dim=1)
+        else:
+            values, indices = torch.topk(x, k=top, dim=1)
+            x_exp = torch.exp(values - values[:,0])
+
+        x_exp_sum = torch.sum(x_exp, dim=1, keepdim=True)
+        x_exp /= x_exp_sum
+        x.zero_().scatter_(1, indices, x_exp) # B * THW * HW
+
+        output = x
+    else:
+        maxes = torch.max(x, dim=1, keepdim=True)[0]
+        if gauss is not None:
+            x_exp = torch.exp(x-maxes)*gauss
+
+        x_exp_sum = torch.sum(x_exp, dim=1, keepdim=True)
+        x_exp /= x_exp_sum
+        output = x_exp
+
+    return output

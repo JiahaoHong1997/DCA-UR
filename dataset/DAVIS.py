@@ -11,19 +11,23 @@ import torchvision.transforms as TF
 
 from transforms import transforms as mytrans
 import myutils
+
 # from datetime import datetime
 # TIMESTAMP = "{0:%Y-%m-%dT%H-%M-%S/}".format(datetime.now())
-MAX_TRAINING_SKIP = 100
+MAX_TRAINING_SKIP = 25
+
 
 class DAVIS17_Train(data.Dataset):
 
-    def __init__(self, root, output_size, imset='2017/train.txt', clip_n=3, max_obj_n=11, increment=2, max_skip=2):
+    def __init__(self, root, output_size, imset='2017/train.txt', clip_n=3, max_obj_n=11, increment=5,
+                 max_skip=10, repeat_time=1):
         self.root = root
         self.clip_n = clip_n
         self.output_size = output_size
         self.max_obj_n = max_obj_n
         self.increment = increment
         self.max_skip = max_skip
+        self.repeat_time = repeat_time
 
         dataset_path = os.path.join(root, 'ImageSets', imset)
         self.dataset_list = list()
@@ -41,7 +45,7 @@ class DAVIS17_Train(data.Dataset):
         self.to_onehot = mytrans.ToOnehot(max_obj_n, shuffle=True)
 
     def __len__(self):
-        return len(self.dataset_list)
+        return int(len(self.dataset_list) * self.repeat_time)
 
     def increase_max_skip(self):
         self.max_skip = min(self.max_skip + self.increment, MAX_TRAINING_SKIP)
@@ -51,6 +55,7 @@ class DAVIS17_Train(data.Dataset):
 
     def __getitem__(self, idx):
 
+        idx = idx % len(self.dataset_list)
         video_name = self.dataset_list[idx]
         img_dir = os.path.join(self.root, 'JPEGImages', '480p', video_name)
         mask_dir = os.path.join(self.root, 'Annotations', '480p', video_name)
@@ -58,23 +63,19 @@ class DAVIS17_Train(data.Dataset):
         img_list = sorted(glob(os.path.join(img_dir, '*.jpg')))
         mask_list = sorted(glob(os.path.join(mask_dir, '*.png')))
 
-        # idx_list = list(range(len(img_list)))
-        # idx0 = idx_list[0]
-        # del idx_list[0]
-        # random.shuffle(idx_list)  # 将idx_list中元素随机排序
-        # idx_list = idx_list[:self.clip_n]  # 取出前clip_n个帧
-        # idx_list[0] = idx0
-
         last_frame = -1
         nframes = len(img_list)
         idx_list = list()
 
         for i in range(self.clip_n):
             if i == 0:
-                last_frame = random.sample(range(0, nframes-self.clip_n+1), 1)[0]
+                last_frame = random.sample(range(0, nframes - self.clip_n + 1), 1)[0]
+
             else:
-                last_frame = random.sample(range(last_frame+1, min(last_frame+self.max_skip+1, nframes-self.clip_n+i+1)),
-                                           1)[0]
+                last_frame = random.sample(
+                        range(last_frame + 1, min(last_frame + self.max_skip + 1, nframes - self.clip_n + i + 1)),
+                        1)[0]
+
             idx_list.append(last_frame)
 
         frames = torch.zeros((self.clip_n, 3, self.output_size, self.output_size), dtype=torch.float)
@@ -126,6 +127,7 @@ class DAVIS17_Train(data.Dataset):
         }
 
         return frames, masks[:, :obj_n], obj_n, info
+
 
 class DAVIS_Test(data.Dataset):
 

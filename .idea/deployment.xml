@@ -2,6 +2,13 @@
 <project version="4">
   <component name="PublishConfigData" serverName="98" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
+      <paths name="201">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/STM_refinement_mask" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="25">
         <serverdata>
           <mappings>
@@ -23,10 +30,24 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="98_aspp_position">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/STM_refinement_aspp_position" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="99">
         <serverdata>
           <mappings>
             <mapping deploy="/STM_refinment_mask" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="99_aspp_position">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/STM_refinement_mask_aspp_position" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

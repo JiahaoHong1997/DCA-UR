@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/../Mask-Propagation/.idea/Mask-Propagation.iml" filepath="$PROJECT_DIR$/../Mask-Propagation/.idea/Mask-Propagation.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/STM_refinement_mask.iml" filepath="$PROJECT_DIR$/.idea/STM_refinement_mask.iml" />
     </modules>
   </component>
