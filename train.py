@@ -14,7 +14,7 @@ from tensorboardX import SummaryWriter
 from model import STM
 from model import FeatureBank
 from model import MaskBank
-from dataset import YTB_train, DAVIS17_Train, PreTrain, BL30K
+from dataset import YTB_train, DAVIS17_Train, PreTrain
 import myutils
 
 
@@ -106,7 +106,7 @@ def run_pretrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vi
     return stats.avg, uncertainty_stats.avg
 
 
-def run_maintrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vis_writer):
+def run_maintrain(model, dataloader, criterion, optimizer):
     stats = myutils.AvgMeter()
     uncertainty_stats = myutils.AvgMeter()
 
@@ -175,21 +175,6 @@ def run_maintrain(model, dataloader, criterion, optimizer, epoch, seed, skips, v
         progress_bar.set_postfix(
             loss=f'{loss.detach().item()*args.bs:.5f} ({stats.avg * args.bs:.5f} {uncertainty_stats.avg:.5f})')
 
-        if iter_idx % 5000 == 0 and args.level == 4:
-            checkpoint = {
-                'epoch': epoch,
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'loss': stats.avg,
-                'seed': seed,
-                'max_skip': skips,
-            }
-            vis_writer.add_scalar('iter/loss', loss.detach().item()*args.bs, (epoch * 150000) + iter_idx)
-
-            checkpoint_path = f'{model_path}/epoch_{epoch:03d}_{iter_idx}.pth'
-            torch.save(checkpoint, checkpoint_path)
-
-
     progress_bar.close()
 
     return stats.avg, uncertainty_stats.avg
@@ -209,8 +194,6 @@ def main():
         dataset2 = YTB_train('../STM/DataSets/YTB/train', output_size=400, clip_n=args.clip_n, max_obj_n=args.obj_n)
         dataset = torch.utils.data.ConcatDataset([dataset1, dataset2])
 
-    elif args.level == 4:
-        dataset = BL30K(args.dataset, output_size=400, clip_n=args.clip_n, max_obj_n=args.obj_n)
     else:
         raise ValueError(f'{args.level} is unknown.')
 
@@ -300,7 +283,7 @@ def main():
         optimizer.zero_grad()
 
         if args.level != 0:
-            loss, uncertainty = run_maintrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vis_writer)
+            loss, uncertainty = run_maintrain(model, dataloader, criterion, optimizer)
         else:
             loss, uncertainty = run_pretrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vis_writer)
         vis_writer.add_scalar('train/loss', loss, epoch)
@@ -343,24 +326,6 @@ def main():
     progress_bar.close()
 
 
-def check_mem(cuda_device):
-    devices_info = os.popen(
-        '"/usr/bin/nvidia-smi" --query-gpu=memory.total,memory.used --format=csv,nounits,noheader').read().strip().split(
-        "\n")
-    total, used = devices_info[int(cuda_device)].split(',')
-    return total, used
-
-
-def occumpy_mem(cuda_device):
-    total, used = check_mem(cuda_device)
-    total = int(total)
-    used = int(used)
-    max_mem = int(total * 0.9)
-    block_mem = max_mem - used
-    x = torch.cuda.FloatTensor(256, 1024, block_mem)
-    del x
-
-
 if __name__ == '__main__':
 
     args = get_args()
@@ -370,11 +335,6 @@ if __name__ == '__main__':
     GPU = args.gpu
     print(MODEL, ', Using Dataset:', args.dataset)
     os.environ['CUDA_VISIBLE_DEVICES'] = GPU
-
-    occumpy_mem(GPU)
-    # for _ in tqdm(range(60)):
-    #     time.sleep(1)
-    # print('Done')
 
     # Device infos
     if torch.cuda.is_available():

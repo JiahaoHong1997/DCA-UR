@@ -2,10 +2,10 @@
 <project version="4">
   <component name="SshConfigs">
     <configs>
-      <sshConfig authType="PASSWORD" host="10.176.62.99" id="8c11855f-f960-4e94-b282-7dd6632c8e25" port="22" nameFormat="DESCRIPTIVE" username="fengzw" />
-      <sshConfig authType="PASSWORD" host="10.176.64.78" id="1c369a3f-6c6d-4654-9789-e4f339c44c64" port="22" nameFormat="DESCRIPTIVE" username="hjh" />
-      <sshConfig authType="PASSWORD" host="10.176.64.25" id="f646761d-db72-48fd-9bce-3c45998241c5" port="22" nameFormat="DESCRIPTIVE" username="hjh" />
-      <sshConfig authType="PASSWORD" host="10.176.55.201" id="2ca6c1b9-50e7-49e5-910d-b2c483fed744" port="22" nameFormat="DESCRIPTIVE" username="hjh" />
+      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="10.176.62.99" id="8c11855f-f960-4e94-b282-7dd6632c8e25" port="22" nameFormat="DESCRIPTIVE" username="fengzw" />
+      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="10.176.64.78" id="1c369a3f-6c6d-4654-9789-e4f339c44c64" port="22" nameFormat="DESCRIPTIVE" username="hjh" />
+      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="10.176.64.25" id="f646761d-db72-48fd-9bce-3c45998241c5" port="22" nameFormat="DESCRIPTIVE" username="hjh" />
+      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="10.176.55.201" id="2ca6c1b9-50e7-49e5-910d-b2c483fed744" port="22" nameFormat="DESCRIPTIVE" username="hjh" />
     </configs>
   </component>
 </project>

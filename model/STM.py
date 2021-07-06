@@ -1,5 +1,5 @@
 import math
-
+import time
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -135,12 +135,12 @@ class Matcher(nn.Module):
             # from tensorboardX import SummaryWriter
             # from torchvision.utils import make_grid
             # writer = SummaryWriter(comment=TIMESTAMP)
-
+            #
             # mmem = mem.reshape(mem.size()[0], mem.size()[1], h, w)
             # curr = q_out.reshape(q_out.size()[0], q_out.size()[1], h, w)
             # currWithMask = q_out_with_mask.reshape(q_out.size()[0], q_out.size()[1], h, w)
             # mmask_mem = mask_mem.reshape(mask_mem.size()[0], mask_mem.size()[1], h, w)
-
+            #
             # writer.add_image('mem',
             #           make_grid(mmem[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
             #                     pad_value=1, scale_each=True, range=(0, 1)), i)
@@ -153,7 +153,7 @@ class Matcher(nn.Module):
             # writer.add_image('mmask_mem',
             #           make_grid(mmask_mem[0].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
             #                     pad_value=1, scale_each=True, range=(0, 1)), i)
-
+            #
             # writer.flush()
             # writer.close()
 
@@ -251,12 +251,42 @@ class Decoder(nn.Module):
         uncertainty = myutils.calc_uncertainty(rough_seg)
         uncertainty = uncertainty.expand(-1, obj_n, -1, -1).reshape(bs * obj_n, 1, h, w)
 
+        # zero = torch.zeros_like(uncertainty)
+        # one = torch.ones_like(uncertainty)
+        # a = torch.where(uncertainty>0.8,one,uncertainty)
+        # a = torch.where(a<=0.8,zero,uncertainty)  # 1,1,h,w
+
+
         rough_seg = rough_seg.view(bs * obj_n, 1, h, w)  # bs*obj_n, 1, h, w
         r1_weighted = r1 * rough_seg
         r1_local = self.local_max(r1_weighted)  # bs*obj_n, 64, h, w
         r1_local = r1_local / (self.local_max(rough_seg) + 1e-8)  # neighborhood reference
         r1_conf = self.local_avg(rough_seg)  # bs*obj_n, 1, h, w
+        #
+        # from tensorboardX import SummaryWriter
+        # from torchvision.utils import make_grid
+        # writer = SummaryWriter(comment=TIMESTAMP)
+        #
+        # for i in range (0,obj_n):
+        #
+        #     writer.add_image('uncertainty',
+        #                 make_grid(uncertainty[i].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+        #                             pad_value=1, scale_each=True, range=(0, 1)), i)
+        #     writer.add_image('a',
+        #                 make_grid(a[i].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+        #                             pad_value=1, scale_each=True, range=(0, 1)), i)
+        #     writer.add_image('rough_seg',
+        #                 make_grid(rough_seg[i].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+        #                             pad_value=1, scale_each=True, range=(0, 1)), i)
+        #
+        #     writer.add_image('r1',
+        #                 make_grid(r1[i].detach().cpu().unsqueeze(dim=1), nrow=20, padding=1, normalize=True,
+        #                             pad_value=1, scale_each=True, range=(0, 1)), i)
+        # time.sleep(1)
+        # writer.flush()
+        # writer.close()
 
+        # r1_local = r1_local*0
         local_match = torch.cat([r1, r1_local], dim=1)
         q = self.local_ResMM(self.local_convFM(local_match))
         q = r1_conf * self.local_pred2(F.relu(q))

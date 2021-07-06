@@ -54,6 +54,9 @@ class YTB_train(data.Dataset):
     def set_max_skip(self, max_skip):
         self.max_skip = max_skip
 
+    def reload_max_skip(self):
+        self.max_skip = 1
+
     def __getitem__(self, idx):
         video_name = self.dataset_list[idx]  # 视频编号
         img_dir = os.path.join(self.root, 'JPEGImages', video_name)

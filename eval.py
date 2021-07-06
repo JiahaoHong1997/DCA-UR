@@ -99,10 +99,12 @@ def eval_DAVIS(model, model_name, dataloader):
 
             pred_mask = F.softmax(score, dim=1)
             pred1 = torch.argmax(pred_mask[0], dim=0)
+
             for j in range(obj_n):
                 predforupdate[:, j] = (pred1 == j).long()
 
             pred = torch.argmax(pred_mask[0], dim=0).cpu().numpy().astype(np.uint8)
+            # pred[pred!=3] = 0
             seg_path = os.path.join(seg_dir, f'{t:05d}.png')
             myutils.save_seg_mask(pred, seg_path, palette)
 
@@ -110,16 +112,35 @@ def eval_DAVIS(model, model_name, dataloader):
             maskforbank = nn.functional.interpolate(predforupdate, size=(h, w), mode='bilinear', align_corners=True)
             maskforbank = maskforbank.view(obj_n, 1, -1)
             prev_list = [maskforbank[i] for i in range(obj_n)]
+            
+#            if t < frame_n - 1 and t % 5 == 0:
+#                for class_idx in range(obj_n):
+#                    keys_list[class_idx] = torch.cat([keys_list[class_idx], k4_list[class_idx]], dim=1)
+#                    values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
+#                    mask_list[class_idx] = torch.cat([mask_list[class_idx], prev_list[class_idx]], dim=1)
 
-            if t < frame_n - 1 and t % 5 == 0:
-                for class_idx in range(obj_n):
-                    keys_list[class_idx] = torch.cat([keys_list[class_idx], k4_list[class_idx]], dim=1)
-                    values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
-                    mask_list[class_idx] = torch.cat([mask_list[class_idx], prev_list[class_idx]], dim=1)
+#                prev_in_mem = True
+#            else:
+#                prev_in_mem = False
 
-                prev_in_mem = True
+            if obj_n == 2:
+                if t < frame_n - 1 and t % 5 == 0:
+                    for class_idx in range(obj_n):
+                        keys_list[class_idx] = torch.cat([keys_list[class_idx], k4_list[class_idx]], dim=1)
+                        values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
+                        mask_list[class_idx] = torch.cat([mask_list[class_idx], prev_list[class_idx]], dim=1)
+
+                    prev_in_mem = True
             else:
-                prev_in_mem = False
+                if t < frame_n - 1 and t % 1 == 0:
+                    for class_idx in range(obj_n):
+                        keys_list[class_idx] = torch.cat([keys_list[class_idx], k4_list[class_idx]], dim=1)
+                        values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
+                        mask_list[class_idx] = torch.cat([mask_list[class_idx], prev_list[class_idx]], dim=1)
+
+                    prev_in_mem = True
+                else:
+                    prev_in_mem = False
 
             if args.viz:
                 overlay_path = os.path.join(overlay_dir, f'{t:05d}.png')
@@ -133,6 +154,7 @@ def eval_DAVIS(model, model_name, dataloader):
 
 def eval_YouTube(model, model_name, dataloader):
     seq_n = len(dataloader)
+    fps = myutils.FrameSecondMeter()
 
     for seq_idx, V in enumerate(dataloader):
 
@@ -214,7 +236,7 @@ def eval_YouTube(model, model_name, dataloader):
             if t < frame_n - 1:
                 k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t)
                 maskforbank = nn.functional.interpolate(predforupdate, size=(k4_h, k4_w), mode='bilinear',
-                                                        align_corners=True)
+                                                            align_corners=True)
                 maskforbank = maskforbank.view(obj_n, 1, -1)
                 prev_list = [maskforbank[i] for i in range(obj_n)]
                 if len(reset_list) > 0:
@@ -234,6 +256,138 @@ def eval_YouTube(model, model_name, dataloader):
                     frame_out = F.interpolate(frames[t].unsqueeze(0), original_size).squeeze(0)
                     overlay_path = os.path.join(overlay_dir, basename_list[t] + '.png')
                     myutils.save_overlay(frame_out, pred, overlay_path, palette)
+
+        fps.add_frame_n(frame_n)
+
+        fps.end()
+        print(myutils.gct(), 'fps:', fps.fps)
+
+
+def eval_YouTube_All_Frame(model, model_name, dataloader):
+    seq_n = len(dataloader)
+    fps = myutils.FrameSecondMeter()
+
+    for seq_idx, V in enumerate(dataloader):
+
+        frames, masks, obj_n, info = V
+
+        frames, masks = frames[0].to(device), masks[0].to(device)
+        H, W = frames.size(2), frames.size(3)
+        frame_n = info['num_frames'][0].item()
+        seq_name = info['name'][0]
+        obj_n = obj_n.item()
+        obj_st = [info['obj_st'][0, i].item() for i in range(obj_n)]
+        basename_list = [info['basename_list'][i][0] for i in range(frame_n)]
+        basename_to_save = [info['basename_to_save'][i][0] for i in range(len(info['basename_to_save']))]
+        obj_vis = info['obj_vis'][0]
+        original_size = (info['original_size'][0].item(), info['original_size'][1].item())
+
+        seg_dir = os.path.join('./output', model_name, seq_name)
+        if not os.path.exists(seg_dir):
+            os.makedirs(seg_dir)
+
+        if args.viz:
+            overlay_dir = os.path.join('./overlay', model_name, seq_name)
+            if not os.path.exists(overlay_dir):
+                os.makedirs(overlay_dir)
+
+        # Compose the first mask
+        pred_mask = torch.zeros_like(masks).unsqueeze(0).float()
+        for i in range(1, obj_n):
+            if obj_st[i] == 0:
+                pred_mask[0, i] = masks[i]
+        pred_mask[0, 0] = 1 - pred_mask.sum(dim=1)
+
+        pred_mask_output = F.interpolate(pred_mask, original_size)
+        pred = torch.argmax(pred_mask_output[0], dim=0).cpu().numpy().astype(np.uint8)
+        seg_path = os.path.join(seg_dir, basename_list[0] + '.png')
+        myutils.save_seg_mask(pred, seg_path, palette)
+
+        if args.viz:
+            frame_out = F.interpolate(frames[0].unsqueeze(0), original_size).squeeze(0)
+            overlay_path = os.path.join(overlay_dir, basename_list[0] + '.png')
+            myutils.save_overlay(frame_out, pred, overlay_path, palette)
+
+        fb = FeatureBank(obj_n)
+
+        k4_list, v4_list, k4_h, k4_w = model.memorize(frames[0:1], pred_mask, 0)  # 参考帧
+        keys_list = k4_list.copy()
+        values_list = v4_list.copy()
+
+        mb = MaskBank(obj_n)
+        maskforbank = nn.functional.interpolate(pred_mask, size=(k4_h, k4_w), mode='bilinear', align_corners=True)
+        maskforbank = maskforbank.view(obj_n, 1, -1)
+        mask_list = [maskforbank[i] for i in range(obj_n)]
+        predforupdate = torch.zeros(1, obj_n, H, W).to(device)
+        prev_in_mem = True
+
+        for t in trange(1, frame_n, desc=f'{seq_idx:3d}/{seq_n:3d} {seq_name}'):
+
+            fb.init_bank(keys_list, values_list)
+            mb.init_bank(mask_list)
+
+            if not prev_in_mem and args.use_pre:
+                fb.update(k4_list, v4_list)
+                mb.update(prev_list)
+
+            score, _ = model.segment(frames[t:t + 1], fb, mb, info)
+
+            reset_list = list()
+            for i in range(1, obj_n):
+                # If this object is invisible.
+                if obj_vis[t, i] == 0:
+                    score[0, i] = -1000
+
+                # If this object appears, reset the score map
+                if obj_st[i] == t:
+                    reset_list.append(i)
+                    score[0, i] = -1000
+                    score[0, i][masks[i]] = 1000
+                    for j in range(obj_n):
+                        if j != i:
+                            score[0, j][masks[i]] = -1000
+
+            pred_mask = F.softmax(score, dim=1)
+            pred1 = torch.argmax(pred_mask[0], dim=0)
+            for j in range(obj_n):
+                predforupdate[:, j] = (pred1 == j).long()
+
+            k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t)
+            maskforbank = nn.functional.interpolate(predforupdate, size=(k4_h, k4_w), mode='bilinear',
+                                                        align_corners=True)
+            maskforbank = maskforbank.view(obj_n, 1, -1)
+            prev_list = [maskforbank[i] for i in range(obj_n)]
+
+            if t < frame_n - 1  and t % 1 == 0: 
+
+                if len(reset_list) > 0:
+                    keys_list = k4_list.copy()
+                    values_list = v4_list.copy()
+                    mask_list = prev_list.copy()
+                else:
+                    for class_idx in range(obj_n):
+                        keys_list[class_idx] = torch.cat([keys_list[class_idx], k4_list[class_idx]], dim=1)
+                        values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
+                        mask_list[class_idx] = torch.cat([mask_list[class_idx], prev_list[class_idx]], dim=1)          
+
+                prev_in_mem = True
+            else:
+                prev_in_mem = False
+
+            if basename_list[t] in basename_to_save:
+                pred_mask_output = F.interpolate(score, original_size)
+                pred = torch.argmax(pred_mask_output[0], dim=0).cpu().numpy().astype(np.uint8)
+                seg_path = os.path.join(seg_dir, basename_list[t] + '.png')
+                myutils.save_seg_mask(pred, seg_path, palette)
+
+                if args.viz:
+                    frame_out = F.interpolate(frames[t].unsqueeze(0), original_size).squeeze(0)
+                    overlay_path = os.path.join(overlay_dir, basename_list[t] + '.png')
+                    myutils.save_overlay(frame_out, pred, overlay_path, palette)
+        fps.add_frame_n(frame_n)
+
+        fps.end()
+        print(myutils.gct(), 'fps:', fps.fps)
 
 
 def main():
@@ -267,6 +421,9 @@ def main():
     elif args.level == 3:
         model_name = 'STM_DAVIS_16val'
         dataset = DAVIS_Test(root=args.dataset, img_set='2016/val.txt', single_obj=True)
+    elif args.level == 4:
+        model_name = 'STM_YoutubeVOS_ALLFRAME'
+        dataset = YouTube_Test(args.dataset)
     else:
         raise ValueError(f'{args.level} is unknown.')
 
@@ -281,6 +438,8 @@ def main():
         eval_YouTube(model, model_name, dataloader)
     elif args.level == 3:
         eval_DAVIS(model, model_name, dataloader)
+    else:
+        eval_YouTube_All_Frame(model, model_name, dataloader)
 
 
 if __name__ == '__main__':
