@@ -7,13 +7,10 @@ from glob import glob
 import torch
 from torch.utils import data
 import torchvision.transforms as TF
-# from tensorboardX import SummaryWriter
 
 from transforms import transforms as mytrans
 import myutils
 
-# from datetime import datetime
-# TIMESTAMP = "{0:%Y-%m-%dT%H-%M-%S/}".format(datetime.now())
 MAX_TRAINING_SKIP = 25
 
 
@@ -80,20 +77,11 @@ class DAVIS17_Train(data.Dataset):
 
         frames = torch.zeros((self.clip_n, 3, self.output_size, self.output_size), dtype=torch.float)
         masks = torch.zeros((self.clip_n, self.max_obj_n, self.output_size, self.output_size), dtype=torch.float)
-        # writer = SummaryWriter(comment=TIMESTAMP)
 
         for i, frame_idx in enumerate(idx_list):
 
             img = myutils.load_image_in_PIL(img_list[frame_idx], 'RGB')
             mask = myutils.load_image_in_PIL(mask_list[frame_idx], 'P')
-            # a = self.to_tensor(img)
-            # b = myutils.load_image_in_PIL(mask_list[frame_idx], 'RGB')
-            # b = self.to_tensor(b)
-            #
-            # a, b = myutils.data.hide_patch(a, b)
-            #
-            # writer.add_image('image', a, i)
-            # writer.add_image('mask', b, i)
 
             if i > 0:
                 img = self.color_jitter(img)
@@ -119,8 +107,6 @@ class DAVIS17_Train(data.Dataset):
             frames[i] = self.to_tensor(img_roi)
             masks[i] = mask_roi
 
-        # writer.flush()
-        # writer.close()
         info = {
             'name': video_name,
             'idx_list': idx_list

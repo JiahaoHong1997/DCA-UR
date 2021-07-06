@@ -1,4 +1,3 @@
-# python原生库
 import os
 import random
 import json
@@ -6,12 +5,10 @@ from glob import glob
 import numpy as np
 from itertools import compress
 
-# pytorch库
 import torch
 from torch.utils import data
 import torchvision.transforms as TF
 
-# 自写库
 import myutils
 from transforms import transforms as mytrans
 
@@ -33,17 +30,15 @@ class YTB_train(data.Dataset):
             meta_data = json.load(json_file)
 
         self.dataset_list = list(meta_data['videos'])
-        self.dataset_size = len(self.dataset_list)  # 读取视频数量
+        self.dataset_size = len(self.dataset_list)
 
-        # 图像变换
-        self.random_horizontal_flip = mytrans.RandomHorizontalFlip(0.3)  # 以0.3的概率对图像和mask做水平翻转
-        self.color_jitter = TF.ColorJitter(0.1, 0.1, 0.1, 0.02)  # 随机更改图像的亮度，对比度和饱和度
-        # 保持中心不变的图像的随机仿射变换
+
+        self.random_horizontal_flip = mytrans.RandomHorizontalFlip(0.3)
+        self.color_jitter = TF.ColorJitter(0.1, 0.1, 0.1, 0.02)
         self.random_affine = mytrans.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.95, 1.05), shear=10)
-        # 将给定的PIL图像裁剪为随机大小和纵横比
         self.random_resize_crop = mytrans.RandomResizedCrop(output_size, (0.3, 0.5), (0.95, 1.05))
-        self.to_tensor = TF.ToTensor()  # 将PIL图像或np.array转化成tensor
-        self.to_onehot = mytrans.ToOnehot(max_obj_n, shuffle=False)  # 将mask转换成onehot格式
+        self.to_tensor = TF.ToTensor()
+        self.to_onehot = mytrans.ToOnehot(max_obj_n, shuffle=False)
 
     def __len__(self):
         return self.dataset_size
@@ -58,12 +53,12 @@ class YTB_train(data.Dataset):
         self.max_skip = 1
 
     def __getitem__(self, idx):
-        video_name = self.dataset_list[idx]  # 视频编号
+        video_name = self.dataset_list[idx]
         img_dir = os.path.join(self.root, 'JPEGImages', video_name)
         mask_dir = os.path.join(self.root, 'Annotations', video_name)
 
-        img_list = sorted(glob(os.path.join(img_dir, '*.jpg')))  # 获得每个视频文件夹下各帧排序后的列表
-        mask_list = sorted(glob(os.path.join(mask_dir, '*.png')))  # 获得每个视频mask文件夹下各帧排序后的列表
+        img_list = sorted(glob(os.path.join(img_dir, '*.jpg')))
+        mask_list = sorted(glob(os.path.join(mask_dir, '*.png')))
 
         last_frame = -1
         nframes = len(img_list)
@@ -87,9 +82,8 @@ class YTB_train(data.Dataset):
 
         frames = torch.zeros((self.clip_n, 3, self.output_size, self.output_size), dtype=torch.float)
         masks = torch.zeros((self.clip_n, self.max_obj_n, self.output_size, self.output_size), dtype=torch.float)
-        # print('idx_list:', idx_list)
 
-        for i, frame_idx in enumerate(idx_list):  # range: (0,clip_n)
+        for i, frame_idx in enumerate(idx_list):
             img = myutils.load_image_in_PIL(img_list[frame_idx], 'RGB')
             mask = myutils.load_image_in_PIL(mask_list[frame_idx], 'P')
 
@@ -100,13 +94,13 @@ class YTB_train(data.Dataset):
             roi_cnt = 0
             while roi_cnt < 10:
                 img_roi, mask_roi = self.random_resize_crop(img, mask)
-                mask_roi = np.array(mask_roi, np.uint8)  # np.uint8:无符号数（0到255）
+                mask_roi = np.array(mask_roi, np.uint8)
 
-                if i == 0:  # 将第一帧设置为reference
-                    mask_roi, obj_list = self.to_onehot(mask_roi)  # 第一帧中所有的标注物体都会出现，所以需要一个obj_list来记录
+                if i == 0:
+                    mask_roi, obj_list = self.to_onehot(mask_roi)
                     obj_n = len(obj_list) + 1
                 else:
-                    mask_roi, _ = self.to_onehot(mask_roi, obj_list)  # 后面的帧中可能不会出现某一物体
+                    mask_roi, _ = self.to_onehot(mask_roi, obj_list)
 
                 if torch.any(mask_roi[0] == 0).item():
                     break

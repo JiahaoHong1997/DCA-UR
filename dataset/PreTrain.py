@@ -75,19 +75,6 @@ class PreTrain(data.Dataset):
             else:
                 mask, _ = self.to_onehot(mask, obj_list)
                 img = self.to_tensor(img)
-                # if idx < len(self.img_list) // 6:
-                #     p = 0
-                # elif idx < len(self.img_list) // 3:
-                #     p = 0.1
-                # elif idx < len(self.img_list) // 2:
-                #     p = 0.2
-                # elif idx < len(self.img_list) * 2 // 3:
-                #     p = 0.3
-                # elif idx <len(self.img_list) * 5 // 6:
-                #     p = 0.4
-                # else:
-                #     p = 0.5
-                # img, mask = myutils.hide_patch(img, mask, p)
 
             frames[i] = img
             masks[i] = mask

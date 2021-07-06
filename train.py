@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.utils import data
 from tensorboardX import SummaryWriter
 
-from model import STM
+from model import TELG
 from model import FeatureBank
 from model import MaskBank
 from dataset import YTB_train, DAVIS17_Train, PreTrain
@@ -19,10 +19,11 @@ import myutils
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Train STM_refinement')
+    parser = argparse.ArgumentParser(description='Train TE-LG')
     parser.add_argument('--gpu', type=str, help="0; 0,1; 0,3; etc", required=True)
-    parser.add_argument('--bs', type=int, default=1, help='Batch size.')
     parser.add_argument('--dataset', type=str, default=None, required=False, help='Dataset floder.')
+    parser.add_argument('--davis-train', type=str, default=None, required=False, help='Dataset floder.')
+    parser.add_argument('--youtube-train', type=str, default=None, required=False, help='Dataset floder.')
     parser.add_argument('--seed', type=int, default=-1, help='Random seed.')
     parser.add_argument('--log', action='store_true', help='Save the training results.')
     parser.add_argument('--level', type=int, default=0, help='0: pretrain. 1: DAVIS. 2: Youtube-VOS.')
@@ -39,8 +40,6 @@ def get_args():
     parser.add_argument('--epochs_per_increment', type=int, default=20, help='Max epochs per increment occurs')
     parser.add_argument('--lu', type=float, default=0.5, help='Regularization factor, default 0.5.')
     parser.add_argument('--gamma', type=float, default=0.2, help='Regularization factor, default 0.5.', required=True)
-    parser.add_argument('--use_km', action='store_true', help='If use km.')
-    parser.add_argument('--use_top', action='store_true', help='If set top_k.')
 
     return parser.parse_args()
 
@@ -96,7 +95,6 @@ def run_pretrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vi
                 'max_skip': skips,
             }
             vis_writer.add_scalar('iter/loss', loss.detach().item(), (epoch*180000)+iter_idx)
-        
 
             checkpoint_path = f'{model_path}/epoch_{epoch:03d}_{iter_idx}.pth'
             torch.save(checkpoint, checkpoint_path)
@@ -189,9 +187,9 @@ def main():
     elif args.level == 2:
         dataset = YTB_train(args.dataset, output_size=400, clip_n=args.clip_n, max_obj_n=args.obj_n)
     elif args.level == 3:
-        dataset1 = DAVIS17_Train('../STM/DataSets/DAVIS', output_size=400, clip_n=args.clip_n, max_obj_n=args.obj_n,
+        dataset1 = DAVIS17_Train(args.davis_train, output_size=400, clip_n=args.clip_n, max_obj_n=args.obj_n,
                                  repeat_time=5)
-        dataset2 = YTB_train('../STM/DataSets/YTB/train', output_size=400, clip_n=args.clip_n, max_obj_n=args.obj_n)
+        dataset2 = YTB_train(args.youtube_train, output_size=400, clip_n=args.clip_n, max_obj_n=args.obj_n)
         dataset = torch.utils.data.ConcatDataset([dataset1, dataset2])
 
     else:
@@ -199,12 +197,7 @@ def main():
 
     # batch sizes
     train_batch_size = num_devices
-
-    top_k = 50 if args.use_top else None
-    if args.use_km:
-        model = STM(device=device, load_imagenet_params=True, top_k=top_k, km=5.6)
-    else:
-        model = STM(device=device, load_imagenet_params=True, top_k=top_k, km=None)
+    model = TELG(device=device, load_imagenet_params=True)
     print("Model instantiated")
 
     if num_devices > 1:
@@ -331,7 +324,7 @@ if __name__ == '__main__':
     args = get_args()
     print(myutils.gct(), f'Args = {args}')
 
-    MODEL = 'STM_refinement'
+    MODEL = 'TE-LG'
     GPU = args.gpu
     print(MODEL, ', Using Dataset:', args.dataset)
     os.environ['CUDA_VISIBLE_DEVICES'] = GPU
