@@ -21,6 +21,7 @@ import myutils
 def get_args():
     parser = argparse.ArgumentParser(description='Train TE-LG')
     parser.add_argument('--gpu', type=str, help="0; 0,1; 0,3; etc", required=True)
+    parser.add_argument('--bs', type=int, default=1, help='Batch size.')
     parser.add_argument('--dataset', type=str, default=None, required=False, help='Dataset floder.')
     parser.add_argument('--davis-train', type=str, default=None, required=False, help='Dataset floder.')
     parser.add_argument('--youtube-train', type=str, default=None, required=False, help='Dataset floder.')
@@ -34,7 +35,7 @@ def get_args():
     parser.add_argument('--total-epochs', type=int, default=120, help='Total running epochs. Default 100.')
     parser.add_argument('--obj-n', type=int, default=3,
                         help='Max number of objects that will be trained at the same time.')
-    parser.add_argument('--clip-n', type=int, default=6, help='Max frames that will be sampled as a batch.')
+    parser.add_argument('--clip-n', type=int, default=3, help='Max frames that will be sampled as a batch.')
     parser.add_argument('--budget', type=int, default=1000000,
                         help='Max number of features that feature bank can store. Default: 300000')
     parser.add_argument('--epochs_per_increment', type=int, default=20, help='Max epochs per increment occurs')
@@ -76,8 +77,10 @@ def run_pretrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vi
         loss = loss + args.lu * uncertainty
 
         loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+
+        if((iter_idx+1) % args.bs) == 0:
+            optimizer.step()
+            optimizer.zero_grad()
 
         uncertainty_stats.update(uncertainty.item())
         stats.update(loss.detach().item())
@@ -160,8 +163,6 @@ def run_maintrain(model, dataloader, criterion, optimizer):
         uncertainty = uncertainties.mean()
         loss = criterion(scores, label)
         loss = loss + args.lu * uncertainty
-
-        loss = loss/args.bs
         loss.backward()
 
         if ((iter_idx + 1) % args.bs) == 0:
@@ -319,6 +320,23 @@ def main():
     progress_bar.close()
 
 
+def check_mem(cuda_device):
+    devices_info = os.popen(
+        '"/usr/bin/nvidia-smi" --query-gpu=memory.total,memory.used --format=csv,nounits,noheader').read().strip().split(
+        "\n")
+    total, used = devices_info[int(cuda_device)].split(',')
+    return total, used
+
+
+def occumpy_mem(cuda_device):
+    total, used = check_mem(cuda_device)
+    total = int(total)
+    used = int(used)
+    max_mem = int(total * 0.9)
+    block_mem = max_mem - used
+    x = torch.cuda.FloatTensor(256, 1024, block_mem)
+    del x
+
 if __name__ == '__main__':
 
     args = get_args()
@@ -328,6 +346,7 @@ if __name__ == '__main__':
     GPU = args.gpu
     print(MODEL, ', Using Dataset:', args.dataset)
     os.environ['CUDA_VISIBLE_DEVICES'] = GPU
+    occumpy_mem(GPU)
 
     # Device infos
     if torch.cuda.is_available():
