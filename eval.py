@@ -69,7 +69,7 @@ def eval_DAVIS(model, model_name, dataloader):
 
 
         fb = FeatureBank(obj_n)
-        k4_list, v4_list, h, w = model.memorize(frames[0:1], pred_mask, 0)
+        k4_list, v4_list, h, w = model.memorize(frames[0:1], pred_mask, 0, 0)
         keys_list = k4_list.copy()
         values_list = v4_list.copy()
         predforupdate = torch.zeros(1, obj_n, H, W).to(device)
@@ -90,7 +90,7 @@ def eval_DAVIS(model, model_name, dataloader):
                 fb.update(k4_list, v4_list)
                 mb.update(prev_list)
 
-            score, _ = model.segment(frames[t:t + 1], fb, mb, info)
+            score, _, f16 = model.segment(frames[t:t + 1], fb, mb, False)
 
             pred_mask = F.softmax(score, dim=1)
             pred1 = torch.argmax(pred_mask[0], dim=0)
@@ -103,13 +103,19 @@ def eval_DAVIS(model, model_name, dataloader):
             seg_path = os.path.join(seg_dir, f'{t:05d}.png')
             myutils.save_seg_mask(pred, seg_path, palette)
 
-            k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t)
-            maskforbank = nn.functional.interpolate(predforupdate, size=(h, w), mode='bilinear', align_corners=True)
-            maskforbank = maskforbank.view(obj_n, 1, -1)
-            prev_list = [maskforbank[i] for i in range(obj_n)]
+            # TODO: 如果前一帧要加入memory，则在此处更新key，value，mask；否则，在之后的if判断中考虑
+            # k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t, f16)
+            # maskforbank = nn.functional.interpolate(predforupdate, size=(h, w), mode='bilinear', align_corners=True)
+            # maskforbank = maskforbank.view(obj_n, 1, -1)
+            # prev_list = [maskforbank[i] for i in range(obj_n)]
 
             if not args.use_power:
                 if t < frame_n - 1 and t % 5 == 0:
+                    k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t, f16)
+                    maskforbank = nn.functional.interpolate(predforupdate, size=(h, w), mode='bilinear',
+                                                            align_corners=True)
+                    maskforbank = maskforbank.view(obj_n, 1, -1)
+                    prev_list = [maskforbank[i] for i in range(obj_n)]
                     for class_idx in range(obj_n):
                         keys_list[class_idx] = torch.cat([keys_list[class_idx], k4_list[class_idx]], dim=1)
                         values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
@@ -207,7 +213,7 @@ def eval_YouTube(model, model_name, dataloader):
 
         for t in trange(1, frame_n, desc=f'{seq_idx:3d}/{seq_n:3d} {seq_name}'):
 
-            score, _ = model.segment(frames[t:t + 1], fb, mb, info)
+            score, _ = model.segment(frames[t:t + 1], fb, mb, False)
 
             reset_list = list()
             for i in range(1, obj_n):

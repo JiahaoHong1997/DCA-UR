@@ -324,7 +324,7 @@ class TELG(nn.Module):
 
         self.decoder = Decoder(device)
 
-    def memorize(self, frame, mask, frame_idx):
+    def memorize(self, frame, mask, frame_idx, f16):
 
         _, K, H, W = mask.shape
 
@@ -335,8 +335,12 @@ class TELG(nn.Module):
         mask_ones = torch.ones_like(mask)
         mask_inv = (mask_ones - mask).clamp(0, 1)
 
-        r4, _, _, _ = self.key_encoder(frame)
+        if frame_idx == 0:
+            r4, _, _, _ = self.key_encoder(frame)
+        else:
+            r4 = f16
         h, w = r4.size(2), r4.size(3)
+
         r4 = self.te(r4.reshape(K, 1024, -1), frame_idx).reshape(K, 1024, h, w)
         k4 = self.key_proj(r4)
         v4 = self.value_encoder(frame, r4, mask, mask_inv)
@@ -348,26 +352,36 @@ class TELG(nn.Module):
         v4_list = [v4[i] for i in range(K)]
         return k4_list, v4_list, h, w
 
-    def segment(self, frame, fb_global, mb, info):
+    def segment(self, frame, fb_global, mb, pre=False):
 
         obj_n = fb_global.obj_n
-
         # pad
         if not self.training:
             [frame], pad = myutils.pad_divide_by([frame], 16, (frame.size()[2], frame.size()[3]))
 
-        r4, r3, r2, r1 = self.key_encoder(frame)
+        if pre is not True:
+            frame = frame.expand(obj_n, -1, -1, -1)
+        f16, f8, f4, f2 = self.key_encoder(frame)
+
+        if pre is not True:
+            r4, r3, r2, r1 = f16[0:1], f8[0:1], f4[0:1], f2[0:1]
+        else:
+            r4, r3, r2, r1 = f16, f8, f4, f2
         bs, _, global_match_h, global_match_w = r4.shape
         _, _, local_match_h, local_match_w = r1.shape
 
-        k4 = self.key_proj(r4)
-        v4 = self.key_comp(r4)
+        if pre is not True:
+            k4 = self.key_proj(r4)[0:1]
+            v4 = self.key_comp(r4)[0:1]
+        else:
+            k4 = self.key_proj(r4)
+            v4 = self.key_comp(r4)
 
         k4 = k4.view(-1, 64, global_match_h*global_match_w)
         v4 = v4.reshape(-1, 512, global_match_h*global_match_w)
 
         res_global = self.matcher(fb_global, k4, v4, mb)
-        res_global = res_global.reshape(bs * obj_n, 1024, global_match_h, global_match_w)
+        res_global = res_global.reshape(bs*obj_n, 1024, global_match_h, global_match_w)
 
         r3_size = r3.shape
         r2_size = r2.shape
@@ -383,7 +397,7 @@ class TELG(nn.Module):
 
         if self.training:
             uncertainty = myutils.calc_uncertainty(F.softmax(score, dim=1))
-            uncertainty = uncertainty.view(bs, -1).norm(p=2, dim=1) / math.sqrt(frame.shape[-2] * frame.shape[-1])
+            uncertainty = uncertainty.view(1, -1).norm(p=2, dim=1) / math.sqrt(frame.shape[-2] * frame.shape[-1])
             uncertainty = uncertainty.mean()
         else:
             uncertainty = None
@@ -397,7 +411,7 @@ class TELG(nn.Module):
             if pad[0] + pad[1] > 0:
                 score = score[:, :, :, pad[0]:-pad[1]]
 
-        return score, uncertainty
+        return score, uncertainty, f16
 
     def forward(self, *args, **kwargs):
         pass
