@@ -206,21 +206,31 @@ class Matcher(nn.Module):
     def __init__(self):
         super(Matcher, self).__init__()
 
-    def forward(self, feature_bank, q_in, q_out, mask_bank):
+    def forward(self, feature_bank, q_in, q_out, mask_bank, pre):
         mem_out_list = []
 
-        for i in range(0, feature_bank.obj_n):
-            d_key, bank_n = feature_bank.keys[i].size()  # 128 , t*h*w
+        d_key, bank_n = feature_bank.keys[0].size()  # 128 , t*h*w
 
-            bs, _, n = q_in.size()
-            p = torch.matmul(feature_bank.keys[i].transpose(0, 1), q_in) / math.sqrt(d_key)  # bs, t*h*w, h*w
-            p = F.softmax(p, dim=1)   # bs, t*h*w, h*w
+        bs, _, n = q_in.size()
+        p = torch.matmul(feature_bank.keys[0].transpose(0, 1), q_in) / math.sqrt(d_key)  # bs, t*h*w, h*w
+        p = F.softmax(p, dim=1)  # bs, t*h*w, h*w
 
-            mem = torch.matmul(feature_bank.values[i], p)  # frame_idx, 512, h*w
-            mask_mem = torch.matmul(mask_bank.mask_list[i], p)  # 1, 1, h*w
-            q_out_with_mask = q_out * mask_mem  # Location Guidance
+        if not pre:
+            for i in range(0, feature_bank.obj_n):
 
-            mem_out_list.append(torch.cat([mem, q_out_with_mask], dim=1))  # frame_idx, 1024, h*w
+                mem = torch.matmul(feature_bank.values[i], p)  # frame_idx, 512, h*w
+                mask_mem = torch.matmul(mask_bank.mask_list[i], p)  # 1, 1, h*w
+                q_out_with_mask = q_out[i] * mask_mem  # Location Guidance
+
+                mem_out_list.append(torch.cat([mem, q_out_with_mask], dim=1))  # frame_idx, 1024, h*w
+        else:
+            for i in range(0, feature_bank.obj_n):
+                mem = torch.matmul(feature_bank.values[i], p)  # frame_idx, 512, h*w
+                mask_mem = torch.matmul(mask_bank.mask_list[i], p)  # 1, 1, h*w
+                q_out_with_mask = q_out * mask_mem  # Location Guidance
+
+                mem_out_list.append(torch.cat([mem, q_out_with_mask], dim=1))  # frame_idx, 1024, h*w
+
 
         mem_out_tensor = torch.stack(mem_out_list, dim=0).transpose(0, 1)  # frame_idx, obj_n, 1024, h*w
 
@@ -330,7 +340,6 @@ class TELG(nn.Module):
 
         (frame, mask), pad = myutils.pad_divide_by([frame, mask], 16, (frame.size()[2], frame.size()[3]))
 
-        frame = frame.expand(K, -1, -1, -1)
         mask = mask[0].unsqueeze(1).float()
         mask_ones = torch.ones_like(mask)
         mask_inv = (mask_ones - mask).clamp(0, 1)
@@ -341,16 +350,17 @@ class TELG(nn.Module):
             r4 = f16
         h, w = r4.size(2), r4.size(3)
 
-        r4 = self.te(r4.reshape(K, 1024, -1), frame_idx).reshape(K, 1024, h, w)
+        r4 = self.te(r4.reshape(1, 1024, -1), frame_idx).reshape(1, 1024, h, w)
         k4 = self.key_proj(r4)
-        v4 = self.value_encoder(frame, r4, mask, mask_inv)
 
-        k4 = k4.reshape(K, 64, h*w)
+        r4_k = r4.expand(K, -1, -1, -1)
+        v4 = self.value_encoder(frame, r4_k, mask, mask_inv)
+
+        k4 = k4.reshape(1, 64, h*w)
         v4 = v4.reshape(K, 512, h*w)
 
-        k4_list = [k4[i] for i in range(K)]
         v4_list = [v4[i] for i in range(K)]
-        return k4_list, v4_list, h, w
+        return k4, v4_list, h, w
 
     def segment(self, frame, fb_global, mb, pre=False):
 
@@ -359,28 +369,23 @@ class TELG(nn.Module):
         if not self.training:
             [frame], pad = myutils.pad_divide_by([frame], 16, (frame.size()[2], frame.size()[3]))
 
-        if pre is not True:
-            frame = frame.expand(obj_n, -1, -1, -1)
-        f16, f8, f4, f2 = self.key_encoder(frame)
+        r4, r3, r2, r1 = self.key_encoder(frame)
 
-        if pre is not True:
-            r4, r3, r2, r1 = f16[0:1], f8[0:1], f4[0:1], f2[0:1]
-        else:
-            r4, r3, r2, r1 = f16, f8, f4, f2
         bs, _, global_match_h, global_match_w = r4.shape
         _, _, local_match_h, local_match_w = r1.shape
 
         if pre is not True:
-            k4 = self.key_proj(r4)[0:1]
-            v4 = self.key_comp(r4)[0:1]
+            k4 = self.key_proj(r4)
+            r4_k = r4.expand(obj_n, -1, -1, -1)
+            v4 = self.key_comp(r4_k)
         else:
             k4 = self.key_proj(r4)
             v4 = self.key_comp(r4)
 
         k4 = k4.view(-1, 64, global_match_h*global_match_w)
-        v4 = v4.reshape(-1, 512, global_match_h*global_match_w)
+        v4 = v4.view(-1, 512, global_match_h*global_match_w)
 
-        res_global = self.matcher(fb_global, k4, v4, mb)
+        res_global = self.matcher(fb_global, k4, v4, mb, pre)
         res_global = res_global.reshape(bs*obj_n, 1024, global_match_h, global_match_w)
 
         r3_size = r3.shape
@@ -411,7 +416,7 @@ class TELG(nn.Module):
             if pad[0] + pad[1] > 0:
                 score = score[:, :, :, pad[0]:-pad[1]]
 
-        return score, uncertainty, f16
+        return score, uncertainty, r4
 
     def forward(self, *args, **kwargs):
         pass

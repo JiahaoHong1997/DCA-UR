@@ -61,13 +61,16 @@ def run_pretrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vi
 
         frames, masks = frames[0].to(device), masks[0].to(device)
 
-        fb_global = FeatureBank(obj_n)
-        k4_list, v4_list, _, _ = model.memorize(frames[0:1], masks[0:1], 0, 0)
-        fb_global.init_bank(k4_list, v4_list)
+        k4, v4_list, h, w = model.memorize(frames[0:1], masks[0:1], 0, 0)
+        fb_global = FeatureBank(obj_n, h, w)
+        fb_global.init_bank(k4, v4_list)
 
         mb = MaskBank(obj_n)
         maskforbank = nn.functional.interpolate(masks[0:1], size=(25, 25), mode='bilinear', align_corners=True)
         maskforbank = maskforbank.view(obj_n, 1, -1)
+
+        for i in range(obj_n):
+            maskforbank[i] = (maskforbank[i] == i).long()
         mask_list = [maskforbank[i] for i in range(obj_n)]
         mb.init_bank(mask_list)
 
@@ -123,13 +126,17 @@ def run_maintrain(model, dataloader, criterion, optimizer):
 
         frames, masks = frames[0].to(device), masks[0].to(device)
 
-        fb_global = FeatureBank(obj_n)
-        k4_list, v4_list, _, _ = model.memorize(frames[0:1], masks[0:1], 0, 0)
-        fb_global.init_bank(k4_list, v4_list)
+        k4, v4_list, h, w = model.memorize(frames[0:1], masks[0:1], 0, 0)
+        fb_global = FeatureBank(obj_n, h, w)
+        fb_global.init_bank(k4, v4_list)
 
         mb = MaskBank(obj_n)
         maskforbank = nn.functional.interpolate(masks[0:1], size=(25, 25), mode='bilinear', align_corners=True)
         maskforbank = maskforbank.view(obj_n, 1, -1)
+
+        for i in range(obj_n):
+            maskforbank[i] = (maskforbank[i] == i).long()
+
         mask_list = [maskforbank[i] for i in range(obj_n)]
         mb.init_bank(mask_list)
 
@@ -139,7 +146,7 @@ def run_maintrain(model, dataloader, criterion, optimizer):
         uncertainties = torch.zeros(frame_n - 1).to(device)
 
         for t in range(1, frame_n):
-            score, uncertainty, f16 = model.segment(frames[t:t + 1], fb_global, mb, False)  # 1 , obj_n , H , W
+            score, uncertainty, r4 = model.segment(frames[t:t + 1], fb_global, mb, False)  # 1 , obj_n , H , W
             scores[t - 1] = score[0]
             uncertainties[t - 1] = uncertainty
 
@@ -149,11 +156,13 @@ def run_maintrain(model, dataloader, criterion, optimizer):
                 predforupdate[:, j] = (pred == j).long()
 
             if t < frame_n - 1:
-                k4_list, v4_list, _, _ = model.memorize(frames[t:t + 1], masks[t:t + 1], t, f16)
-                fb_global.update(k4_list, v4_list)
+                k4, v4_list, _, _ = model.memorize(frames[t:t + 1], masks[t:t + 1], t, r4)
+                fb_global.update(k4, v4_list)
                 maskforbank = nn.functional.interpolate(predforupdate, size=(25, 25), mode='bilinear',
                                                           align_corners=True)
                 maskforbank = maskforbank.view(obj_n, 1, -1)
+                for i in range(obj_n):
+                    maskforbank[i] = (maskforbank[i] == i).long()
                 prev_list = [maskforbank[i] for i in range(obj_n)]
                 mb.update(prev_list)
 
