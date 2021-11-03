@@ -61,9 +61,9 @@ def run_pretrain(model, dataloader, criterion, optimizer, epoch, seed, skips, vi
 
         frames, masks = frames[0].to(device), masks[0].to(device)
 
-        k4, v4_list, h, w = model.memorize(frames[0:1], masks[0:1], 0, 0)
-        fb_global = FeatureBank(obj_n, h, w)
-        fb_global.init_bank(k4, v4_list)
+        fb_global = FeatureBank(obj_n, 25, 25)
+        k4, v4_list, h, w = model.memorize(frames[0:1], masks[0:1], 0, 0, fb_global)
+        fb_global.init_values(v4_list)
 
         mb = MaskBank(obj_n)
         maskforbank = nn.functional.interpolate(masks[0:1], size=(25, 25), mode='bilinear', align_corners=True)
@@ -126,9 +126,9 @@ def run_maintrain(model, dataloader, criterion, optimizer):
 
         frames, masks = frames[0].to(device), masks[0].to(device)
 
-        k4, v4_list, h, w = model.memorize(frames[0:1], masks[0:1], 0, 0)
-        fb_global = FeatureBank(obj_n, h, w)
-        fb_global.init_bank(k4, v4_list)
+        fb_global = FeatureBank(obj_n, 25, 25)
+        k4, v4_list, h, w = model.memorize(frames[0:1], masks[0:1], 0, 0, fb_global)
+        fb_global.init_values(v4_list)
 
         mb = MaskBank(obj_n)
         maskforbank = nn.functional.interpolate(masks[0:1], size=(25, 25), mode='bilinear', align_corners=True)
@@ -156,8 +156,8 @@ def run_maintrain(model, dataloader, criterion, optimizer):
                 predforupdate[:, j] = (pred == j).long()
 
             if t < frame_n - 1:
-                k4, v4_list, _, _ = model.memorize(frames[t:t + 1], masks[t:t + 1], t, r4)
-                fb_global.update(k4, v4_list)
+                k4, v4_list, _, _ = model.memorize(frames[t:t + 1], masks[t:t + 1], t, r4, fb_global)
+                fb_global.update_values(v4_list)
                 maskforbank = nn.functional.interpolate(predforupdate, size=(25, 25), mode='bilinear',
                                                           align_corners=True)
                 maskforbank = maskforbank.view(obj_n, 1, -1)

@@ -6,21 +6,25 @@ from torchvision.models import resnet50, resnet18
 
 import myutils
 from model import TimeEncoding
+from model import NONLocalBlock2D
 
 
 class BasicConv(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
         super(BasicConv, self).__init__()
         self.out_channels = out_planes
-        self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias)
+        self.conv = nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, stride=stride, padding=padding,
+                              dilation=dilation, groups=groups, bias=bias)
 
     def forward(self, x):
         x = self.conv(x)
         return x
 
+
 class Flatten(nn.Module):
     def forward(self, x):
         return x.view(x.size(0), -1)
+
 
 class ChannelGate(nn.Module):
     def __init__(self, gate_channels, reduction_ratio=16, pool_types=['avg', 'max']):
@@ -31,49 +35,55 @@ class ChannelGate(nn.Module):
             nn.Linear(gate_channels, gate_channels // reduction_ratio),
             nn.ReLU(),
             nn.Linear(gate_channels // reduction_ratio, gate_channels)
-            )
+        )
         self.pool_types = pool_types
+
     def forward(self, x):
         channel_att_sum = None
         for pool_type in self.pool_types:
-            if pool_type=='avg':
-                avg_pool = F.avg_pool2d( x, (x.size(2), x.size(3)), stride=(x.size(2), x.size(3)))
-                channel_att_raw = self.mlp( avg_pool )
-            elif pool_type=='max':
-                max_pool = F.max_pool2d( x, (x.size(2), x.size(3)), stride=(x.size(2), x.size(3)))
-                channel_att_raw = self.mlp( max_pool )
+            if pool_type == 'avg':
+                avg_pool = F.avg_pool2d(x, (x.size(2), x.size(3)), stride=(x.size(2), x.size(3)))
+                channel_att_raw = self.mlp(avg_pool)
+            elif pool_type == 'max':
+                max_pool = F.max_pool2d(x, (x.size(2), x.size(3)), stride=(x.size(2), x.size(3)))
+                channel_att_raw = self.mlp(max_pool)
 
             if channel_att_sum is None:
                 channel_att_sum = channel_att_raw
             else:
                 channel_att_sum = channel_att_sum + channel_att_raw
 
-        scale = torch.sigmoid( channel_att_sum ).unsqueeze(2).unsqueeze(3).expand_as(x)
+        scale = torch.sigmoid(channel_att_sum).unsqueeze(2).unsqueeze(3).expand_as(x)
         return x * scale
+
 
 class ChannelPool(nn.Module):
     def forward(self, x):
-        return torch.cat( (torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1 )
+        return torch.cat((torch.max(x, 1)[0].unsqueeze(1), torch.mean(x, 1).unsqueeze(1)), dim=1)
+
 
 class SpatialGate(nn.Module):
     def __init__(self):
         super(SpatialGate, self).__init__()
         kernel_size = 7
         self.compress = ChannelPool()
-        self.spatial = BasicConv(2, 1, kernel_size, stride=1, padding=(kernel_size-1) // 2)
+        self.spatial = BasicConv(2, 1, kernel_size, stride=1, padding=(kernel_size - 1) // 2)
+
     def forward(self, x):
         x_compress = self.compress(x)
         x_out = self.spatial(x_compress)
-        scale = torch.sigmoid(x_out) # broadcasting
+        scale = torch.sigmoid(x_out)  # broadcasting
         return x * scale
+
 
 class CBAM(nn.Module):
     def __init__(self, gate_channels, reduction_ratio=16, pool_types=['avg', 'max'], no_spatial=False):
         super(CBAM, self).__init__()
         self.ChannelGate = ChannelGate(gate_channels, reduction_ratio, pool_types)
-        self.no_spatial=no_spatial
+        self.no_spatial = no_spatial
         if not no_spatial:
             self.SpatialGate = SpatialGate()
+
     def forward(self, x):
         x_out = self.ChannelGate(x)
         if not self.no_spatial:
@@ -91,6 +101,7 @@ class KeyProjection(nn.Module):
 
     def forward(self, x):
         return self.key_proj(x)
+
 
 class FeatureFusionBlock(nn.Module):
     def __init__(self, indim, outdim):
@@ -131,6 +142,7 @@ class ResBlock(nn.Module):
 
         return x + r
 
+
 class KeyEncoder(nn.Module):
     def __init__(self, load_imagenet_params):
         super(KeyEncoder, self).__init__()
@@ -161,6 +173,7 @@ class KeyEncoder(nn.Module):
 
         return r4, r3, r2, r1
 
+
 class ValueEncoder(nn.Module):
     def __init__(self, load_imagenet_params):
         super(ValueEncoder, self).__init__()
@@ -184,16 +197,15 @@ class ValueEncoder(nn.Module):
         self.register_buffer('std', torch.FloatTensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
 
     def forward(self, in_f, r4, in_m, in_o):
-
         f = (in_f - self.mean) / self.std
         # key_f16 is the feature from the key encoder
 
         x = self.conv1(f) + self.conv1_m(in_m) + self.conv1_o(in_o)
 
         x = self.bn1(x)
-        x = self.relu(x)   # 1/2, 64
+        x = self.relu(x)  # 1/2, 64
         x = self.maxpool(x)  # 1/4, 64
-        x = self.layer1(x)   # 1/4, 64
+        x = self.layer1(x)  # 1/4, 64
         x = self.layer2(x)  # 1/8, 128
         x = self.layer3(x)  # 1/16, 256
 
@@ -217,7 +229,6 @@ class Matcher(nn.Module):
 
         if not pre:
             for i in range(0, feature_bank.obj_n):
-
                 mem = torch.matmul(feature_bank.values[i], p)  # frame_idx, 512, h*w
                 mask_mem = torch.matmul(mask_bank.mask_list[i], p)  # 1, 1, h*w
                 q_out_with_mask = q_out[i] * mask_mem  # Location Guidance
@@ -231,11 +242,9 @@ class Matcher(nn.Module):
 
                 mem_out_list.append(torch.cat([mem, q_out_with_mask], dim=1))  # frame_idx, 1024, h*w
 
-
         mem_out_tensor = torch.stack(mem_out_list, dim=0).transpose(0, 1)  # frame_idx, obj_n, 1024, h*w
 
         return mem_out_tensor
-
 
 
 class Refine(nn.Module):
@@ -329,12 +338,13 @@ class TELG(nn.Module):
         self.key_comp = nn.Conv2d(1024, 512, kernel_size=3, padding=1)
 
         self.te = TimeEncoding.TimeEncoding(d_hid=1024)
+        self.self_attention = NONLocalBlock2D(in_channels=64)
 
         self.matcher = Matcher()
 
         self.decoder = Decoder(device)
 
-    def memorize(self, frame, mask, frame_idx, f16):
+    def memorize(self, frame, mask, frame_idx, f16, fb_global):
 
         _, K, H, W = mask.shape
 
@@ -350,16 +360,26 @@ class TELG(nn.Module):
             r4 = f16
         h, w = r4.size(2), r4.size(3)
 
+        # key
         r4 = self.te(r4.reshape(1, 1024, -1), frame_idx).reshape(1, 1024, h, w)
         k4 = self.key_proj(r4)
+        k4 = k4.reshape(1, 64, h * w)
+        if frame_idx == 0:
+            fb_global.init_keys(k4)
+            kk4 = fb_global.keys
+        else:
+            kk4 = torch.cat([k4, fb_global.keys], dim=2)
+        kk4 = kk4.unsqueeze(3).reshape(-1, -1, 64, h, w)
+        kk4 = torch.transpose(kk4, 2, 3)
+        kk4 = self.self_attention(kk4).squeeze(3).reshape(-1, -1, h * w).permute(1, 2, 0)
+        fb_global.update_keys(kk4)
 
+        # value
         r4_k = r4.expand(K, -1, -1, -1)
         v4 = self.value_encoder(frame, r4_k, mask, mask_inv)
-
-        k4 = k4.reshape(1, 64, h*w)
-        v4 = v4.reshape(K, 512, h*w)
-
+        v4 = v4.reshape(K, 512, h * w)
         v4_list = [v4[i] for i in range(K)]
+
         return k4, v4_list, h, w
 
     def segment(self, frame, fb_global, mb, pre=False):
@@ -382,11 +402,11 @@ class TELG(nn.Module):
             k4 = self.key_proj(r4)
             v4 = self.key_comp(r4)
 
-        k4 = k4.view(-1, 64, global_match_h*global_match_w)
-        v4 = v4.view(-1, 512, global_match_h*global_match_w)
+        k4 = k4.view(-1, 64, global_match_h * global_match_w)
+        v4 = v4.view(-1, 512, global_match_h * global_match_w)
 
         res_global = self.matcher(fb_global, k4, v4, mb, pre)
-        res_global = res_global.reshape(bs*obj_n, 1024, global_match_h, global_match_w)
+        res_global = res_global.reshape(bs * obj_n, 1024, global_match_h, global_match_w)
 
         r3_size = r3.shape
         r2_size = r2.shape

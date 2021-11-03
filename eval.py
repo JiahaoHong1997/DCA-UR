@@ -67,10 +67,8 @@ def eval_DAVIS(model, model_name, dataloader):
             overlay_path = os.path.join(overlay_dir, '00000.png')
             myutils.save_overlay(frames[0], pred, overlay_path, palette)
 
-
-
-        k4, v4_list, h, w = model.memorize(frames[0:1], pred_mask, 0, 0)
-        fb = FeatureBank(obj_n, h, w)
+        fb = FeatureBank(obj_n, H/16, W/16)
+        k4, v4_list, h, w = model.memorize(frames[0:1], pred_mask, 0, 0, fb)
         keys = k4.clone()
         values_list = v4_list.copy()
         predforupdate = torch.zeros(1, obj_n, H, W).to(device)
@@ -87,11 +85,13 @@ def eval_DAVIS(model, model_name, dataloader):
 
         for t in tqdm(range(1, frame_n), desc=f'{seq_idx} {seq_name}'):
 
-            fb.init_bank(keys, values_list)
+            fb.init_keys(keys)
+            fb.init_values(values_list)
             mb.init_bank(mask_list)
 
             if not prev_in_mem and args.use_pre:
-                fb.update(k4, v4_list)
+                fb.keys = torch.cat([k4,keys], dim=2)
+                fb.update_values(v4_list)
                 mb.update(prev_list)
 
             score, _, r4 = model.segment(frames[t:t + 1], fb, mb, False)
@@ -117,7 +117,7 @@ def eval_DAVIS(model, model_name, dataloader):
 
             if not args.use_power:
                 if t < frame_n - 1 and t % 5 == 0:
-                    k4, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t, r4)
+                    k4, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t, r4, fb)
                     maskforbank = nn.functional.interpolate(predforupdate, size=(h, w), mode='bilinear',
                                                             align_corners=True)
                     maskforbank = maskforbank.view(obj_n, 1, -1)
@@ -126,7 +126,7 @@ def eval_DAVIS(model, model_name, dataloader):
                         maskforbank[i] = (maskforbank[i] == i).long()
                     prev_list = [maskforbank[i] for i in range(obj_n)]
 
-                    keys = torch.cat([keys, k4], dim=2)
+                    keys = fb.keys
                     for class_idx in range(obj_n):
                         values_list[class_idx] = torch.cat([values_list[class_idx], v4_list[class_idx]], dim=1)
                         mask_list[class_idx] = torch.cat([mask_list[class_idx], prev_list[class_idx]], dim=1)
@@ -209,9 +209,9 @@ def eval_YouTube(model, model_name, dataloader):
             overlay_path = os.path.join(overlay_dir, basename_list[0] + '.png')
             myutils.save_overlay(frame_out, pred, overlay_path, palette)
 
-        k4, v4_list, k4_h, k4_w = model.memorize(frames[0:1], pred_mask, 0)  # 参考帧
-        fb = FeatureBank(obj_n, k4_h, k4_w)
-        fb.init_bank(k4, v4_list)
+        fb = FeatureBank(obj_n, H/16, W/16)
+        k4, v4_list, k4_h, k4_w = model.memorize(frames[0:1], pred_mask, 0, fb)  # 参考帧
+        fb.init_values(v4_list)
 
         mb = MaskBank(obj_n)
         maskforbank = nn.functional.interpolate(pred_mask, size=(k4_h, k4_w), mode='bilinear', align_corners=True)
@@ -248,7 +248,7 @@ def eval_YouTube(model, model_name, dataloader):
                 predforupdate[:, j] = (pred1 == j).long()
 
             if t < frame_n - 1:
-                k4, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t)
+                k4, v4_list, _, _ = model.memorize(frames[t:t + 1], pred_mask, t, fb)
                 maskforbank = nn.functional.interpolate(predforupdate, size=(k4_h, k4_w), mode='bilinear',
                                                             align_corners=True)
                 maskforbank = maskforbank.view(obj_n, 1, -1)
@@ -257,10 +257,11 @@ def eval_YouTube(model, model_name, dataloader):
                     maskforbank[i] = (maskforbank[i] == i).long()
                 prev_list = [maskforbank[i] for i in range(obj_n)]
                 if len(reset_list) > 0:
-                    fb.init_bank(k4, v4_list)
+                    fb.init_keys(k4)
+                    fb.init_values(v4_list)
                     mb.init_bank(prev_list)
                 else:
-                    fb.update(k4, v4_list)
+                    fb.update_values(v4_list)
                     mb.update(prev_list)
 
             if basename_list[t] in basename_to_save:
