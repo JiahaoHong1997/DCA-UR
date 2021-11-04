@@ -5,7 +5,7 @@
       <paths name="201">
         <serverdata>
           <mappings>
-            <mapping deploy="/STM_refinement_mask" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/TELG" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>
