@@ -6,7 +6,7 @@ from torchvision.models import resnet50, resnet18
 
 import myutils
 from model import TimeEncoding
-from model import NONLocalBlock2D
+from model.NonLocalEmmbedding import NONLocalBlock3D
 
 
 class BasicConv(nn.Module):
@@ -338,7 +338,7 @@ class TELG(nn.Module):
         self.key_comp = nn.Conv2d(1024, 512, kernel_size=3, padding=1)
 
         self.te = TimeEncoding.TimeEncoding(d_hid=1024)
-        self.self_attention = NONLocalBlock2D(in_channels=64)
+        self.self_attention = NONLocalBlock3D(in_channels=64)
 
         self.matcher = Matcher()
 
@@ -368,10 +368,11 @@ class TELG(nn.Module):
             fb_global.init_keys(k4)
             kk4 = fb_global.keys
         else:
-            kk4 = torch.cat([k4, fb_global.keys], dim=2)
-        kk4 = kk4.unsqueeze(3).reshape(-1, -1, 64, h, w)
-        kk4 = torch.transpose(kk4, 2, 3)
-        kk4 = self.self_attention(kk4).squeeze(3).reshape(-1, -1, h * w).permute(1, 2, 0)
+            kk4 = torch.cat([k4, fb_global.keys.view(-1, 64, h * w)], dim=0)
+
+        kk4 = kk4.unsqueeze(0).view(1, -1, 64, h, w)
+        kk4 = torch.transpose(kk4, 1, 2)
+        kk4 = self.self_attention(kk4).squeeze(0).view(64, -1, h * w * (frame_idx + 1)).transpose(0, 1)
         fb_global.update_keys(kk4)
 
         # value
