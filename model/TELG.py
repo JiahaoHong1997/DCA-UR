@@ -368,11 +368,19 @@ class TELG(nn.Module):
             fb_global.init_keys(k4)
             kk4 = fb_global.keys
         else:
+<<<<<<< HEAD
             kk4 = torch.cat([k4, fb_global.keys.view(-1, 64, h * w)], dim=0)
 
         kk4 = kk4.unsqueeze(0).view(1, -1, 64, h, w)
         kk4 = torch.transpose(kk4, 1, 2)
         kk4 = self.self_attention(kk4).squeeze(0).view(64, -1, h * w * (frame_idx + 1)).transpose(0, 1)
+=======
+            kk4 = torch.cat([k4, fb_global.keys], dim=2)
+
+        kk4 = kk4.unsqueeze(0).view(1, 1, 64, h, w)
+        kk4 = torch.transpose(kk4, 1, 2)
+        kk4 = self.self_attention(kk4).squeeze(0).view(64, -1, h * w).transpose(0, 1)
+>>>>>>> origin/sigle_kv
         fb_global.update_keys(kk4)
 
         # value
